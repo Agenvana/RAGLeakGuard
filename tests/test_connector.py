@@ -8,7 +8,7 @@ def test_read_chroma_roundtrip(tmp_path):
 
     store = str(tmp_path / "store")
     client = chromadb.PersistentClient(path=store)
-    col = client.create_collection("t")
+    col = client.create_collection("notes")
     col.add(
         ids=["a", "b"],
         documents=["Patient Alice, phone 0400 000 000", "Bob lives at 1 Main St"],
@@ -19,4 +19,4 @@ def test_read_chroma_roundtrip(tmp_path):
     assert len(items) == 2
     texts = {it["text"] for it in items}
     assert any("Alice" in t for t in texts)
-    assert all(it["collection"] == "t" for it in items)
+    assert all(it["collection"] == "notes" for it in items)
