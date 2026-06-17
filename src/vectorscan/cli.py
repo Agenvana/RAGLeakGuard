@@ -33,12 +33,36 @@ def scan(
         raise typer.Exit(2)
 
     print(f"[bold]vectorscan[/] read [bold green]{len(items)}[/] item(s) from [bold]{source}[/] at '{path}'.")
-    if items:
-        s = items[0]
-        text = s["text"] or ""
-        print(f"\n[dim]sample — collection '{s['collection']}', id '{s['id']}':[/]")
-        print(f"  {text[:160]}{'…' if len(text) > 160 else ''}")
-    print("\n[yellow]Next:[/] detection (Day 4) — find the sensitive data inside these items.")
+    if not items:
+        raise typer.Exit(0)
+
+    from collections import Counter
+
+    by_type: Counter = Counter()
+    total = flagged = 0
+    try:
+        from vectorscan.detect import detect
+
+        for it in items:
+            found = detect(it["text"])
+            if found:
+                flagged += 1
+            total += len(found)
+            by_type.update(f["type"] for f in found)
+    except ImportError:
+        print("[dim]Detection extras missing — run: pip install 'vectorscan[detect]'[/]")
+        raise typer.Exit(0)
+    except OSError:
+        print("[dim]spaCy model missing — run: python -m spacy download en_core_web_sm[/]")
+        raise typer.Exit(0)
+
+    print(f"\n[bold red]⚠  {total}[/] sensitive item(s) found across [bold]{flagged}/{len(items)}[/] records:")
+    for entity, count in by_type.most_common():
+        print(f"   [yellow]{entity:<16}[/] {count}")
+
+    s = items[0]
+    print(f"\n[dim]e.g. record '{s['id']}':[/] {(s['text'] or '')[:120]}…")
+    print("\n[dim]Next: a risk-scored report (Week 2) — severity, regulatory mapping, erasure proof.[/]")
     raise typer.Exit(0)
 
 
