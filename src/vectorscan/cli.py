@@ -2,7 +2,12 @@
 import typer
 from rich import print
 
-app = typer.Typer(add_completion=False, help="Scan your AI's vector database for exposed sensitive data.")
+app = typer.Typer(add_completion=False, no_args_is_help=True, help="Scan your AI's vector database for exposed sensitive data.")
+
+
+@app.callback()
+def main():
+    """vectorscan — find sensitive data exposed in your AI's vector store."""
 
 
 @app.command()
