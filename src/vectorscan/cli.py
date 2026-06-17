@@ -56,13 +56,16 @@ def scan(
         print("[dim]spaCy model missing — run: python -m spacy download en_core_web_sm[/]")
         raise typer.Exit(0)
 
-    print(f"\n[bold red]⚠  {total}[/] sensitive item(s) found across [bold]{flagged}/{len(items)}[/] records:")
+    print(f"\n[bold red]⚠  {total}[/] sensitive finding(s) across [bold]{flagged}/{len(items)}[/] records:")
     for entity, count in by_type.most_common():
         print(f"   [yellow]{entity:<16}[/] {count}")
 
-    s = items[0]
-    print(f"\n[dim]e.g. record '{s['id']}':[/] {(s['text'] or '')[:120]}…")
-    print("\n[dim]Next: a risk-scored report (Week 2) — severity, regulatory mapping, erasure proof.[/]")
+    from vectorscan.report import build_report
+
+    md = build_report(dict(by_type), len(items), flagged, source=source, path=path)
+    with open(report, "w", encoding="utf-8") as fh:
+        fh.write(md)
+    print(f"\n[green]✓[/] Risk-scored report written to [bold]{report}[/].")
     raise typer.Exit(0)
 
 

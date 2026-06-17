@@ -21,3 +21,4 @@ chroma_db/
 *.sqlite3
 scratch/
 sample_store/
+report.md
