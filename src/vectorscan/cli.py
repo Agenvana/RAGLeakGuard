@@ -20,9 +20,26 @@ def scan(
 
     Pipeline (being built): connector -> extract text -> detect -> risk-score -> report.
     """
-    print(f"[bold yellow]vectorscan[/] — scanning [bold]{source}[/] …")
-    print("[dim]Pipeline not implemented yet — see the build plan. (Day 3–5)[/]")
-    raise typer.Exit(code=0)
+    source = source.lower()
+    if source == "chroma":
+        from vectorscan.connectors import read_chroma
+
+        if not path:
+            print("[red]--path is required for chroma (the store directory).[/]")
+            raise typer.Exit(2)
+        items = list(read_chroma(path))
+    else:
+        print(f"[red]Source '{source}' isn't supported yet (try: chroma).[/]")
+        raise typer.Exit(2)
+
+    print(f"[bold]vectorscan[/] read [bold green]{len(items)}[/] item(s) from [bold]{source}[/] at '{path}'.")
+    if items:
+        s = items[0]
+        text = s["text"] or ""
+        print(f"\n[dim]sample — collection '{s['collection']}', id '{s['id']}':[/]")
+        print(f"  {text[:160]}{'…' if len(text) > 160 else ''}")
+    print("\n[yellow]Next:[/] detection (Day 4) — find the sensitive data inside these items.")
+    raise typer.Exit(0)
 
 
 if __name__ == "__main__":
