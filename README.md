@@ -17,6 +17,7 @@ git clone https://github.com/Agenvana/vectorscan.git
 cd vectorscan
 python3 -m venv .venv
 source .venv/bin/activate
+pip install --upgrade pip          # fresh venvs ship an old pip; the editable install needs a newer one
 pip install -e ".[chroma,detect,dev]"
 python -m spacy download en_core_web_sm
 ```
