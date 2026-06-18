@@ -1,9 +1,11 @@
 """Detection — find sensitive data in text.
 
 Engine: Microsoft Presidio (configured for the small spaCy model, for speed).
-The differentiation lives in (a) the CUSTOM recognisers and (b) the ALLOW-LIST —
-domain/security judgment that turns a noisy entity dump into trustworthy findings.
+The differentiation lives in (a) the CUSTOM recognisers, (b) the ALLOW-LIST, and
+(c) the POST-PROCESSING below — domain/security judgment that turns a noisy entity
+dump into trustworthy findings.
 """
+import re
 from functools import lru_cache
 from typing import List, Dict
 
@@ -18,6 +20,41 @@ RELEVANT_ENTITIES = [
     "CREDIT_CARD", "IBAN_CODE", "IP_ADDRESS", "MEDICAL_LICENSE",
     "AU_MEDICARE", "AU_TFN", "AU_ABN",
 ]
+
+# A DATE_TIME must look like a date (separator or month) — kills postcode/number false dates.
+_DATE_LIKE = re.compile(r"\d\s?[/\-.]\s?\d|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", re.I)
+# A PHONE must look like a phone — kills digit-runs (e.g. Medicare numbers) matched as phones.
+_PHONE_GROUP = re.compile(r"\d{3}\s?\d{3}\s?\d{3}")
+
+
+def _looks_like_date(s: str) -> bool:
+    return bool(_DATE_LIKE.search(s))
+
+
+def _looks_like_phone(s: str) -> bool:
+    s = s.strip()
+    return s.startswith(("+", "0", "(")) or "+" in s or bool(_PHONE_GROUP.search(s))
+
+
+def _postprocess(raw: List[Dict]) -> List[Dict]:
+    # 1. Entity-specific validation (precision tuning).
+    kept = []
+    for f in raw:
+        if f["type"] == "DATE_TIME" and not _looks_like_date(f["text"]):
+            continue
+        if f["type"] == "PHONE_NUMBER" and not _looks_like_phone(f["text"]):
+            continue
+        kept.append(f)
+
+    # 2. Non-max suppression: when spans overlap, keep the highest-score (then longest) one.
+    kept.sort(key=lambda f: (-f["score"], -(f["end"] - f["start"])))
+    result: List[Dict] = []
+    for f in kept:
+        if any(f["start"] < o["end"] and o["start"] < f["end"] for o in result):
+            continue
+        result.append(f)
+    result.sort(key=lambda f: f["start"])
+    return result
 
 
 @lru_cache(maxsize=1)
@@ -44,7 +81,7 @@ def detect(text: str) -> List[Dict]:
     if not text or not text.strip():
         return []
     results = _analyzer().analyze(text=text, language="en", entities=RELEVANT_ENTITIES)
-    return [
+    raw = [
         {
             "type": r.entity_type,
             "start": r.start,
@@ -54,3 +91,4 @@ def detect(text: str) -> List[Dict]:
         }
         for r in results
     ]
+    return _postprocess(raw)
