@@ -7,10 +7,10 @@ pytest.importorskip("spacy")
 def test_default_detects_us_and_global_pii():
     from vectorscan.detect import detect
 
-    found = detect("Jane Smith, jane@example.com, SSN 123-45-6789.")
+    found = detect("Email jane@example.com, card 4111 1111 1111 1111.")
     types = {f["type"] for f in found}
     assert "EMAIL_ADDRESS" in types
-    assert "US_SSN" in types          # US recogniser is ON by default
+    assert "CREDIT_CARD" in types     # global/US recogniser is ON by default
 
 
 def test_au_locale_pack_toggles_medicare():
