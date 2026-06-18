@@ -23,17 +23,14 @@ RELEVANT_ENTITIES = [
 
 # A DATE_TIME must look like a date (separator or month) — kills postcode/number false dates.
 _DATE_LIKE = re.compile(r"\d\s?[/\-.]\s?\d|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", re.I)
-# A PHONE must look like a phone — kills digit-runs (e.g. Medicare numbers) matched as phones.
-_PHONE_GROUP = re.compile(r"\d{3}\s?\d{3}\s?\d{3}")
-
-
 def _looks_like_date(s: str) -> bool:
     return bool(_DATE_LIKE.search(s))
 
 
 def _looks_like_phone(s: str) -> bool:
-    s = s.strip()
-    return s.startswith(("+", "0", "(")) or "+" in s or bool(_PHONE_GROUP.search(s))
+    # Recall-first: keep anything phone-length (>=8 digits). A Medicare number also passes
+    # here, but is suppressed by NMS in favour of the higher-confidence AU_MEDICARE span.
+    return sum(c.isdigit() for c in s) >= 8
 
 
 def _postprocess(raw: List[Dict]) -> List[Dict]:
@@ -70,7 +67,7 @@ def _analyzer():
     analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=["en"])
     analyzer.registry.add_recognizer(PatternRecognizer(
         supported_entity="AU_MEDICARE",
-        patterns=[Pattern("medicare", _MEDICARE_PATTERN, 0.6)],
+        patterns=[Pattern("medicare", _MEDICARE_PATTERN, 0.9)],
         context=["medicare"],
     ))
     return analyzer
