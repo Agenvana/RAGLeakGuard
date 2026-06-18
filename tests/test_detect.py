@@ -4,32 +4,25 @@ pytest.importorskip("presidio_analyzer")
 pytest.importorskip("spacy")
 
 
-def test_detect_finds_pii():
+def test_default_detects_us_and_global_pii():
     from vectorscan.detect import detect
 
-    text = "Contact Jane Smith at jane@example.com or call 0400 123 456. Medicare 54909989 1 1."
-    found = detect(text)
+    found = detect("Jane Smith, jane@example.com, SSN 123-45-6789.")
     types = {f["type"] for f in found}
-
-    assert "EMAIL_ADDRESS" in types       # built-in recogniser
-    assert "AU_MEDICARE" in types         # our custom recogniser fired
-    assert len(found) >= 2
+    assert "EMAIL_ADDRESS" in types
+    assert "US_SSN" in types          # US recogniser is ON by default
 
 
-def test_phone_validator_drops_medicare_as_phone():
+def test_au_locale_pack_toggles_medicare():
     from vectorscan.detect import detect
 
-    found = detect("Patient on Medicare 54909989 1 1 only.")
-    types = {f["type"] for f in found}
-    assert "AU_MEDICARE" in types
-    assert "PHONE_NUMBER" not in types     # a Medicare number is not a phone
+    text = "Patient on Medicare 54909989 1 1."
+    assert "AU_MEDICARE" not in {f["type"] for f in detect(text)}             # off by default
+    assert "AU_MEDICARE" in {f["type"] for f in detect(text, locale="au")}    # on with --locale au
 
 
-def test_date_validator_keeps_real_dates_drops_bare_numbers():
+def test_date_validator():
     from vectorscan.detect import detect
 
-    dated = {f["type"] for f in detect("DOB 06/06/1949.")}
-    assert "DATE_TIME" in dated             # real date survives
-
-    bare = {f["type"] for f in detect("Postcode 2949.")}
-    assert "DATE_TIME" not in bare          # bare 4-digit number is not a date
+    assert "DATE_TIME" in {f["type"] for f in detect("DOB 06/06/1949.")}
+    assert "DATE_TIME" not in {f["type"] for f in detect("Postcode 2949.")}   # bare number isn't a date

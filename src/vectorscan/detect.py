@@ -1,40 +1,47 @@
 """Detection — find sensitive data in text.
 
-Engine: Microsoft Presidio (configured for the small spaCy model, for speed).
-The differentiation lives in (a) the CUSTOM recognisers, (b) the ALLOW-LIST, and
-(c) the POST-PROCESSING below — domain/security judgment that turns a noisy entity
-dump into trustworthy findings.
+Engine: Microsoft Presidio (small spaCy model, for speed). Global + US recognisers are
+ON by default (the primary market); country-specific recognisers are opt-in "locale packs"
+(--locale). The differentiation lives in (a) the packs/custom recognisers and (b) the
+POST-PROCESSING below — domain judgment that turns a noisy entity dump into trustworthy findings.
 """
 import re
 from functools import lru_cache
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 # Australian Medicare-style number (matches our synthetic fixture; tune for production).
 _MEDICARE_PATTERN = r"\b[2-6]\d{7}\s?\d\s?\d\b"
 
-# Security judgment: report only entities that matter in our (AU) context.
-# Excludes US-specific recognisers (US_BANK_NUMBER, US_DRIVER_LICENSE, US_SSN…) and
-# URL/ORGANIZATION — which otherwise fire as false positives on AU data + email domains.
-RELEVANT_ENTITIES = [
+# Default: global + US sensitive entities (primary market). Excludes URL/ORGANIZATION noise.
+DEFAULT_ENTITIES = [
     "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "DATE_TIME", "LOCATION",
-    "CREDIT_CARD", "IBAN_CODE", "IP_ADDRESS", "MEDICAL_LICENSE",
-    "AU_MEDICARE", "AU_TFN", "AU_ABN",
+    "CREDIT_CARD", "IBAN_CODE", "CRYPTO", "IP_ADDRESS", "MEDICAL_LICENSE", "NRP",
+    "US_SSN", "US_BANK_NUMBER", "US_DRIVER_LICENSE", "US_PASSPORT", "US_ITIN",
 ]
 
-# A DATE_TIME must look like a date (separator or month) — kills postcode/number false dates.
+# Opt-in country recognisers — add with --locale. Extend per market.
+LOCALE_PACKS = {
+    "au": ["AU_MEDICARE", "AU_TFN", "AU_ABN", "AU_ACN"],
+    "uk": ["UK_NHS", "UK_NINO"],
+    "sg": ["SG_NRIC_FIN"],
+    "in": ["IN_PAN", "IN_AADHAAR"],
+}
+
 _DATE_LIKE = re.compile(r"\d\s?[/\-.]\s?\d|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", re.I)
+
+
 def _looks_like_date(s: str) -> bool:
     return bool(_DATE_LIKE.search(s))
 
 
 def _looks_like_phone(s: str) -> bool:
-    # Recall-first: keep anything phone-length (>=8 digits). A Medicare number also passes
-    # here, but is suppressed by NMS in favour of the higher-confidence AU_MEDICARE span.
+    # Recall-first: keep anything phone-length (>=8 digits). Overlapping country IDs
+    # (e.g. AU_MEDICARE) win via NMS, so this can stay permissive.
     return sum(c.isdigit() for c in s) >= 8
 
 
 def _postprocess(raw: List[Dict]) -> List[Dict]:
-    # 1. Entity-specific validation (precision tuning).
+    # 1. Entity-specific validation (precision).
     kept = []
     for f in raw:
         if f["type"] == "DATE_TIME" and not _looks_like_date(f["text"]):
@@ -42,8 +49,7 @@ def _postprocess(raw: List[Dict]) -> List[Dict]:
         if f["type"] == "PHONE_NUMBER" and not _looks_like_phone(f["text"]):
             continue
         kept.append(f)
-
-    # 2. Non-max suppression: when spans overlap, keep the highest-score (then longest) one.
+    # 2. Non-max suppression: on overlap, keep highest-score (then longest) span.
     kept.sort(key=lambda f: (-f["score"], -(f["end"] - f["start"])))
     result: List[Dict] = []
     for f in kept:
@@ -65,6 +71,7 @@ def _analyzer():
     }).create_engine()
 
     analyzer = AnalyzerEngine(nlp_engine=nlp_engine, supported_languages=["en"])
+    # Custom AU Medicare recogniser (reliable on our fixture; high score so it wins overlaps).
     analyzer.registry.add_recognizer(PatternRecognizer(
         supported_entity="AU_MEDICARE",
         patterns=[Pattern("medicare", _MEDICARE_PATTERN, 0.9)],
@@ -73,19 +80,21 @@ def _analyzer():
     return analyzer
 
 
-def detect(text: str) -> List[Dict]:
-    """Return findings: [{type, start, end, score, text}] for one piece of text."""
+def detect(text: str, locale: Optional[str] = None) -> List[Dict]:
+    """Return findings [{type, start, end, score, text}].
+
+    locale: optional country pack (e.g. "au") that adds country-specific recognisers
+            on top of the global/US defaults.
+    """
     if not text or not text.strip():
         return []
-    results = _analyzer().analyze(text=text, language="en", entities=RELEVANT_ENTITIES)
+    entities = list(DEFAULT_ENTITIES)
+    if locale:
+        entities += LOCALE_PACKS.get(locale.lower(), [])
+    results = _analyzer().analyze(text=text, language="en", entities=entities)
     raw = [
-        {
-            "type": r.entity_type,
-            "start": r.start,
-            "end": r.end,
-            "score": round(r.score, 2),
-            "text": text[r.start:r.end],
-        }
+        {"type": r.entity_type, "start": r.start, "end": r.end,
+         "score": round(r.score, 2), "text": text[r.start:r.end]}
         for r in results
     ]
     return _postprocess(raw)

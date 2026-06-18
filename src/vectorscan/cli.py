@@ -15,6 +15,7 @@ def scan(
     source: str = typer.Option(..., "--source", help="Vector store type: chroma | pinecone"),
     path: str = typer.Option(None, "--path", help="Path or connection string for the store"),
     report: str = typer.Option("report.md", "--report", help="Where to write the report"),
+    locale: str = typer.Option(None, "--locale", help="Locale pack: au | uk | sg | in (adds country recognisers)"),
 ):
     """Scan a vector store and report exposed sensitive data.
 
@@ -44,7 +45,7 @@ def scan(
         from vectorscan.detect import detect
 
         for it in items:
-            found = detect(it["text"])
+            found = detect(it["text"], locale=locale)
             if found:
                 flagged += 1
             total += len(found)
