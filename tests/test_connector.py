@@ -4,7 +4,7 @@ chromadb = pytest.importorskip("chromadb")
 
 
 def test_read_chroma_roundtrip(tmp_path):
-    from vectorscan.connectors import read_chroma
+    from ragleakguard.connectors import read_chroma
 
     store = str(tmp_path / "store")
     client = chromadb.PersistentClient(path=store)

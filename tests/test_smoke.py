@@ -1,8 +1,8 @@
 def test_version():
-    import vectorscan
-    assert vectorscan.__version__
+    import ragleakguard
+    assert ragleakguard.__version__
 
 
 def test_cli_imports():
-    from vectorscan.cli import app
+    from ragleakguard.cli import app
     assert app is not None

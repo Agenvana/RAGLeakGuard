@@ -1,4 +1,4 @@
-"""vectorscan CLI — point it at a vector store and scan for exposed sensitive data."""
+"""ragleakguard CLI — point it at a vector store and scan for exposed sensitive data."""
 import typer
 from rich import print
 
@@ -7,7 +7,7 @@ app = typer.Typer(add_completion=False, no_args_is_help=True, help="Scan your AI
 
 @app.callback()
 def main():
-    """vectorscan — find sensitive data exposed in your AI's vector store."""
+    """ragleakguard — find sensitive data exposed in your AI's vector store."""
 
 
 @app.command()
@@ -23,7 +23,7 @@ def scan(
     """
     source = source.lower()
     if source == "chroma":
-        from vectorscan.connectors import read_chroma
+        from ragleakguard.connectors import read_chroma
 
         if not path:
             print("[red]--path is required for chroma (the store directory).[/]")
@@ -33,7 +33,7 @@ def scan(
         print(f"[red]Source '{source}' isn't supported yet (try: chroma).[/]")
         raise typer.Exit(2)
 
-    print(f"[bold]vectorscan[/] read [bold green]{len(items)}[/] item(s) from [bold]{source}[/] at '{path}'.")
+    print(f"[bold]ragleakguard[/] read [bold green]{len(items)}[/] item(s) from [bold]{source}[/] at '{path}'.")
     if not items:
         raise typer.Exit(0)
 
@@ -42,7 +42,7 @@ def scan(
     by_type: Counter = Counter()
     total = flagged = 0
     try:
-        from vectorscan.detect import detect
+        from ragleakguard.detect import detect
 
         for it in items:
             found = detect(it["text"], locale=locale)
@@ -51,7 +51,7 @@ def scan(
             total += len(found)
             by_type.update(f["type"] for f in found)
     except ImportError:
-        print("[dim]Detection extras missing — run: pip install 'vectorscan[detect]'[/]")
+        print("[dim]Detection extras missing — run: pip install 'ragleakguard[detect]'[/]")
         raise typer.Exit(0)
     except OSError:
         print("[dim]spaCy model missing — run: python -m spacy download en_core_web_sm[/]")
@@ -61,7 +61,7 @@ def scan(
     for entity, count in by_type.most_common():
         print(f"   [yellow]{entity:<16}[/] {count}")
 
-    from vectorscan.report import build_report
+    from ragleakguard.report import build_report
 
     md = build_report(dict(by_type), len(items), flagged, source=source, path=path)
     with open(report, "w", encoding="utf-8") as fh:

@@ -1,20 +1,20 @@
-# vectorscan
+# RAGLeakGuard
 
 > Scan your AI's vector database for exposed sensitive data — before it becomes a breach you can't delete.
 
-**vectorscan** is a CLI that connects to your vector store (Chroma today; more soon), reads what's stored, detects sensitive data (PII, health, financial), and writes a **risk-scored report**. No changes to your app — point it at the store and scan.
+**RAGLeakGuard** is a CLI that connects to your vector store (Chroma today; more soon), reads what's stored, detects sensitive data (PII, health, financial), and writes a **risk-scored report**. No changes to your app — point it at the store and scan.
 
 > 🚧 Early development — building in public. Not production-ready yet.
 
 ## Why this matters
 
-RAG systems embed your private data into vector databases. That data **can be reconstructed** from the vectors (embedding inversion), is **hard to delete** (backups, replicas, caches, fine-tuned models), and usually **isn't inventoried**. vectorscan finds it.
+RAG systems embed your private data into vector databases. That data **can be reconstructed** from the vectors (embedding inversion), is **hard to delete** (backups, replicas, caches, fine-tuned models), and usually **isn't inventoried**. RAGLeakGuard finds it.
 
 ## Install (from source)
 
 ```bash
-git clone https://github.com/Agenvana/vectorscan.git
-cd vectorscan
+git clone https://github.com/Agenvana/RAGLeakGuard.git
+cd RAGLeakGuard
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip          # fresh venvs ship an old pip; the editable install needs a newer one
@@ -28,13 +28,13 @@ python -m spacy download en_core_web_sm
 
 ```bash
 # 1. Create a test vector store full of FAKE sensitive records
-python scripts/seed_synthetic.py                 # -> ./sample_store (100 fake clinic records)
+python scripts/seed_synthetic.py                          # -> ./sample_store (100 fake clinic records)
 
 # 2. Scan it — global + US recognisers are on by default
-vectorscan scan --source chroma --path ./sample_store --report report.md
+ragleakguard scan --source chroma --path ./sample_store --report report.md
 
 # 3. The fixture is Australian, so add the AU locale pack for full coverage
-vectorscan scan --source chroma --path ./sample_store --locale au --report report.md
+ragleakguard scan --source chroma --path ./sample_store --locale au --report report.md
 
 # 4. Open report.md  (summary, findings by type + severity, risk level, remediation)
 ```

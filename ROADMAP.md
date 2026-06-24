@@ -1,4 +1,4 @@
-# vectorscan — Roadmap
+# RAGLeakGuard — Roadmap
 
 Early development (the **Diagnose** stage). Checkboxes are intent, not commitments; dates are targets.
 
@@ -19,5 +19,5 @@ Early development (the **Diagnose** stage). Checkboxes are intent, not commitmen
 
 ## Product stages
 - [ ] **Fix** — tokenise/redact sensitive data *before* embedding; deletion-safe RAG.
-- [ ] **Prove** — compliance & erasure reports; hosted control plane (*vectorscan Cloud*).
+- [ ] **Prove** — compliance & erasure reports; hosted control plane (*RAGLeakGuard Cloud*).
 - [ ] Embedding-inversion demo — reconstruct text from a "safe" vector.
