@@ -17,7 +17,17 @@
 
 RAG systems embed your private data into vector databases. That data **can be reconstructed** from the vectors (embedding inversion), is **hard to delete** (backups, replicas, caches, fine-tuned models), and usually **isn't inventoried**. RAGLeakGuard finds it.
 
-## Install (from source)
+## Install
+
+```bash
+pip install "ragleakguard[chroma,detect]"   # scanner + Chroma connector + detection engine
+python -m spacy download en_core_web_sm       # one-time: the NLP model (~12 MB)
+```
+
+> **Python 3.9 note:** dependencies are pinned (`spaCy<3.8`, `numpy<2`) so prebuilt wheels are used — no source build needed.
+
+<details>
+<summary>Or install from source (for development)</summary>
 
 ```bash
 git clone https://github.com/Agenvana/RAGLeakGuard.git
@@ -28,8 +38,7 @@ pip install --upgrade pip          # fresh venvs ship an old pip; the editable i
 pip install -e ".[chroma,detect,dev]"
 python -m spacy download en_core_web_sm
 ```
-
-> **Python 3.9 note:** dependencies are pinned (`spaCy<3.8`, `numpy<2`) so prebuilt wheels are used — no source build needed.
+</details>
 
 ## Quickstart (≈2 minutes)
 
