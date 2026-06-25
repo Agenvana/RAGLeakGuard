@@ -41,12 +41,11 @@ DEFAULT_ENTITIES = [
     "US_SSN", "US_BANK_NUMBER", "US_DRIVER_LICENSE", "US_PASSPORT", "US_ITIN",
 ]
 
-# Opt-in country recognisers — add with --locale. Extend per market.
+# Opt-in country recognisers — add with --locale. ONLY packs whose recognisers are actually
+# implemented live here, so --locale never silently no-ops. Planned packs (UK, NZ, CA, SG, TW, IN)
+# are tracked in ROADMAP.md. US sensitive IDs are already ON by default (see DEFAULT_ENTITIES).
 LOCALE_PACKS = {
     "au": ["AU_MEDICARE", "AU_PHONE", "AU_TFN", "AU_ABN", "AU_ACN"],
-    "uk": ["UK_NHS", "UK_NINO"],
-    "sg": ["SG_NRIC_FIN"],
-    "in": ["IN_PAN", "IN_AADHAAR"],
 }
 
 _DATE_LIKE = re.compile(r"\d\s?[/\-.]\s?\d|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", re.I)
