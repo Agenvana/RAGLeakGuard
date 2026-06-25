@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install (pinned deps need a fresh pip)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[chroma,detect,dev]"
+          python -m spacy download en_core_web_sm
+
+      - name: Run tests
+        env:
+          PYTHONWARNINGS: ignore
+          ANONYMIZED_TELEMETRY: "False"
+        run: python -m pytest -q
