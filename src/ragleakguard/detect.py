@@ -12,6 +12,20 @@ from typing import List, Dict, Optional
 # Australian Medicare-style number (matches our synthetic fixture; tune for production).
 _MEDICARE_PATTERN = r"\b[2-6]\d{7}\s?\d\s?\d\b"
 
+# Australian phone numbers. Presidio's PHONE_NUMBER (Google libphonenumber, default region)
+# misses most AU formats when the country code is absent — a recall gap, and a missed number is
+# the dangerous error. This regex covers: +61 international, 04xx mobiles, (0x)/0x landlines,
+# and 1300/1800 service numbers. Separators are optional (space / hyphen / none).
+_AU_PHONE_PATTERN = (
+    r"(?<![\w+])(?:"
+    r"\+61[\s-]?(?:\(0\)[\s-]?)?\d(?:[\s-]?\d){8}"   # +61 2 1234 5678 / +61 412 345 678
+    r"|04\d{2}[\s-]?\d{3}[\s-]?\d{3}"                # 04xx xxx xxx  (mobile)
+    r"|\(0[2-8]\)[\s-]?\d{4}[\s-]?\d{4}"             # (02) 1234 5678  (landline)
+    r"|0[2-8][\s-]?\d{4}[\s-]?\d{4}"                 # 02 1234 5678    (landline)
+    r"|1[38]00[\s-]?\d{3}[\s-]?\d{3}"               # 1300 / 1800 123 456
+    r")(?!\d)"
+)
+
 # Default: global + US sensitive entities (primary market). Excludes URL/ORGANIZATION noise.
 DEFAULT_ENTITIES = [
     "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "DATE_TIME", "LOCATION",
@@ -21,7 +35,7 @@ DEFAULT_ENTITIES = [
 
 # Opt-in country recognisers — add with --locale. Extend per market.
 LOCALE_PACKS = {
-    "au": ["AU_MEDICARE", "AU_TFN", "AU_ABN", "AU_ACN"],
+    "au": ["AU_MEDICARE", "AU_PHONE", "AU_TFN", "AU_ABN", "AU_ACN"],
     "uk": ["UK_NHS", "UK_NINO"],
     "sg": ["SG_NRIC_FIN"],
     "in": ["IN_PAN", "IN_AADHAAR"],
@@ -76,6 +90,13 @@ def _analyzer():
         supported_entity="AU_MEDICARE",
         patterns=[Pattern("medicare", _MEDICARE_PATTERN, 0.9)],
         context=["medicare"],
+    ))
+    # Custom AU phone recogniser — closes the recall gap Presidio's libphonenumber leaves on
+    # AU formats. Score sits above Presidio's PHONE_NUMBER so it wins the label on overlap (NMS).
+    analyzer.registry.add_recognizer(PatternRecognizer(
+        supported_entity="AU_PHONE",
+        patterns=[Pattern("au_phone", _AU_PHONE_PATTERN, 0.75)],
+        context=["phone", "mobile", "mob", "tel", "ph", "call", "contact"],
     ))
     return analyzer
 
