@@ -26,6 +26,14 @@ _AU_PHONE_PATTERN = (
     r")(?!\d)"
 )
 
+# Australian business / tax identifiers. The regex finds the *shape*; the checksum gate in
+# _postprocess confirms the check digit — which rejects ~90%+ of look-alike numbers, so we
+# surface real IDs without flooding the report with random digit strings. Off by default
+# (--locale au). Algorithms: TFN/ABN per the ATO, ACN per ASIC.
+_TFN_PATTERN = r"\b\d{3}\s?\d{3}\s?\d{3}\b"          # 9 digits, e.g. 123 456 782
+_ABN_PATTERN = r"\b\d{2}\s?\d{3}\s?\d{3}\s?\d{3}\b"  # 11 digits, e.g. 51 824 753 556
+_ACN_PATTERN = r"\b\d{3}\s?\d{3}\s?\d{3}\b"          # 9 digits, e.g. 004 085 616
+
 # Default: global + US sensitive entities (primary market). Excludes URL/ORGANIZATION noise.
 DEFAULT_ENTITIES = [
     "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", "DATE_TIME", "LOCATION",
@@ -54,6 +62,44 @@ def _looks_like_phone(s: str) -> bool:
     return sum(c.isdigit() for c in s) >= 8
 
 
+def _digits(s: str) -> str:
+    return re.sub(r"\D", "", s)
+
+
+def _valid_tfn(s: str) -> bool:
+    """ATO Tax File Number checksum: weighted sum of 9 digits divisible by 11."""
+    d = _digits(s)
+    if len(d) != 9:
+        return False
+    weights = (1, 4, 3, 7, 5, 8, 6, 9, 10)
+    return sum(int(c) * w for c, w in zip(d, weights)) % 11 == 0
+
+
+def _valid_abn(s: str) -> bool:
+    """ATO ABN checksum: subtract 1 from the first digit, weighted sum divisible by 89."""
+    d = _digits(s)
+    if len(d) != 11:
+        return False
+    weights = (10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19)
+    nums = [int(c) for c in d]
+    nums[0] -= 1
+    return sum(n * w for n, w in zip(nums, weights)) % 89 == 0
+
+
+def _valid_acn(s: str) -> bool:
+    """ASIC ACN checksum: complement (mod 10) of the weighted first 8 digits == check digit."""
+    d = _digits(s)
+    if len(d) != 9:
+        return False
+    weights = (8, 7, 6, 5, 4, 3, 2, 1)
+    total = sum(int(c) * w for c, w in zip(d[:8], weights))
+    return (10 - total % 10) % 10 == int(d[8])
+
+
+# Checksum gate for AU structured IDs — a candidate is kept only if its check digit verifies.
+_AU_ID_VALIDATORS = {"AU_TFN": _valid_tfn, "AU_ABN": _valid_abn, "AU_ACN": _valid_acn}
+
+
 def _postprocess(raw: List[Dict]) -> List[Dict]:
     # 1. Entity-specific validation (precision).
     kept = []
@@ -62,6 +108,8 @@ def _postprocess(raw: List[Dict]) -> List[Dict]:
             continue
         if f["type"] == "PHONE_NUMBER" and not _looks_like_phone(f["text"]):
             continue
+        if f["type"] in _AU_ID_VALIDATORS and not _AU_ID_VALIDATORS[f["type"]](f["text"]):
+            continue  # AU tax/business ID failed its checksum — drop the look-alike
         kept.append(f)
     # 2. Non-max suppression: on overlap, keep highest-score (then longest) span.
     kept.sort(key=lambda f: (-f["score"], -(f["end"] - f["start"])))
@@ -98,6 +146,18 @@ def _analyzer():
         patterns=[Pattern("au_phone", _AU_PHONE_PATTERN, 0.75)],
         context=["phone", "mobile", "mob", "tel", "ph", "call", "contact"],
     ))
+    # Custom AU tax/business IDs — regex finds the shape; the checksum gate in _postprocess
+    # confirms the check digit. Score above generic phone so the specific AU label wins NMS.
+    for entity, pattern, name, ctx in (
+        ("AU_TFN", _TFN_PATTERN, "tfn", ["tfn", "tax file"]),
+        ("AU_ABN", _ABN_PATTERN, "abn", ["abn", "business number"]),
+        ("AU_ACN", _ACN_PATTERN, "acn", ["acn", "company number"]),
+    ):
+        analyzer.registry.add_recognizer(PatternRecognizer(
+            supported_entity=entity,
+            patterns=[Pattern(name, pattern, 0.85)],
+            context=ctx,
+        ))
     return analyzer
 
 

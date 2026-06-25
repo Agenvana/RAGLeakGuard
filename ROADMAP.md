@@ -5,7 +5,7 @@ Early development (the **Diagnose** stage). Checkboxes are intent, not commitmen
 ## Detection accuracy
 - [x] **Custom AU phone recogniser** — `AU_PHONE` regex recogniser covering `+61…`, `04xx` mobiles, `(0X)…`/`0X…` landlines, and `1300/1800` numbers. Closes Presidio's recall gap on AU formats (measured 20% miss → 0% on the labelled fixture in `tests/test_au_phone.py`).
 - [ ] More **locale packs** — EU, Canada, NZ, Japan, Brazil.
-- [ ] Optional larger spaCy model (`en_core_web_lg`) for better `PERSON` / `LOCATION` accuracy.
+- [ ] ~~Larger spaCy model for better `PERSON`/`LOCATION`~~ — **parked (someday/maybe).** If ever pulled: ship as opt-in `--accuracy high`, and only in the **paid/Cloud tier** where we control the hardware — *never* in the free "install & scan in 2 minutes" path (it drives OSS adoption). `en_core_web_lg` is only a marginal gain over `sm`; the real jump is `en_core_web_trf`, which pulls in PyTorch and breaks the lightweight Python-3.9 pinned install — a client-pays decision, not a cost we carry.
 - [ ] Recall/precision **benchmark** against a labelled fixture (so accuracy is measured, not guessed).
 
 ## Connectors
