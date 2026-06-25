@@ -4,6 +4,13 @@
 
 **RAGLeakGuard** is a CLI that connects to your vector store (Chroma today; more soon), reads what's stored, detects sensitive data (PII, health, financial), and writes a **risk-scored report**. No changes to your app — point it at the store and scan.
 
+> **What it is:** a *data-inventory & compliance* scanner — it answers the question a
+> compliance officer actually asks: *"what regulated data is sitting in our vector store,
+> and can we prove we can delete it?"* Read-only; safe to run against production.
+>
+> **What it isn't:** a red-team tool. It doesn't fire prompt-injection or jailbreak attacks —
+> it audits the **data at rest**, not how the model responds under attack.
+
 > 🚧 Early development — building in public. Not production-ready yet.
 
 ## Why this matters
