@@ -5,7 +5,7 @@ description = "Scan your AI's vector database for exposed sensitive data."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "Apache-2.0" }
-authors = [{ name = "Belle" }]
+authors = [{ name = "Belle Chang" }]
 keywords = ["llm", "rag", "vector-database", "security", "pii", "privacy", "ai-security"]
 classifiers = [
   "Development Status :: 3 - Alpha",
