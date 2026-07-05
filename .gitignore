@@ -22,3 +22,4 @@ chroma_db/
 scratch/
 sample_store/
 report.md
+.DS_Store
