@@ -78,6 +78,10 @@ The state file and webhook payloads contain **record ids, finding types, and cou
 - **Default:** global + US recognisers — SSN, bank number, driver license, credit card, email, phone, names, locations, dates, IP, crypto…
 - **Locale packs (`--locale`):** `au` (Medicare / TFN / ABN), `uk`, `sg`, `in` — opt-in country IDs.
 
+## 📊 The AI Data Security Report
+
+A monthly, methods-open report measuring where AI pipelines actually leak data — produced with this tool's benchmark scripts, on synthetic data, reproducible on your machine. **Issue #1 (July 2026): [Your AI's Privacy Filter Speaks American. It Missed 1 in 3 Australian IDs.](reports/AI-Data-Security-Report-01-2026-07.pdf)** All issues: [reports/](reports/).
+
 ## Roadmap
 
 See **[ROADMAP.md](ROADMAP.md)** — next up includes a custom AU phone recogniser, more connectors (Pinecone, pgvector), and the Fix/Prove layers.
