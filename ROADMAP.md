@@ -21,6 +21,7 @@ Early development (the **Diagnose** stage). Checkboxes are intent, not commitmen
 - [ ] Pinecone
 - [ ] pgvector (Postgres)
 - [ ] Qdrant, Weaviate
+- [ ] **Files/folder connector (`--source files --path ./docs`)** — scan source documents & transcripts BEFORE they're uploaded to platform-bundled knowledge bases (Vapi, ElevenLabs, agent-builder platforms whose vector stores users can't reach). The pre-upload gate for closed platforms; pairs with `monitor` watching an "outbox" folder. (From Belle's voice-agent question, 2026-07-05.)
 
 ## Compliance & reporting
 - [ ] HTML report (alongside Markdown)
