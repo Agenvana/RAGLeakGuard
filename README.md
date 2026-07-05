@@ -55,6 +55,24 @@ ragleakguard scan --source chroma --path ./sample_store --locale au --report rep
 # 4. Open report.md  (summary, findings by type + severity, risk level, remediation)
 ```
 
+## Monitor (continuous checks)
+
+One scan tells you where you stand today; `monitor` tells you when it changes:
+
+```bash
+# First run writes a baseline (fingerprints only — never your data)
+ragleakguard monitor --source chroma --path ./sample_store --locale au --state rlg-state.json
+
+# Later runs diff against the baseline and alert on NEW or CHANGED findings
+ragleakguard monitor --source chroma --path ./sample_store --locale au --state rlg-state.json \
+  --webhook https://hooks.example.com/your-alert   # Slack / Discord / Zapier / n8n
+
+# Cron it (hourly): exit code 1 = new exposure detected
+0 * * * *  ragleakguard monitor --source chroma --path /srv/store --state /var/lib/rlg/state.json --webhook $HOOK
+```
+
+The state file and webhook payloads contain **record ids, finding types, and counts only** — no document text, no detected values, ever.
+
 ## Detection
 
 - **Default:** global + US recognisers — SSN, bank number, driver license, credit card, email, phone, names, locations, dates, IP, crypto…
