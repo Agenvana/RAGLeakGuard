@@ -23,6 +23,10 @@ Early development (the **Diagnose** stage). Checkboxes are intent, not commitmen
 - [ ] Qdrant, Weaviate
 - [ ] **Files/folder connector (`--source files --path ./docs`)** — scan source documents & transcripts BEFORE they're uploaded to platform-bundled knowledge bases (Vapi, ElevenLabs, agent-builder platforms whose vector stores users can't reach). The pre-upload gate for closed platforms; pairs with `monitor` watching an "outbox" folder. (From Belle's voice-agent question, 2026-07-05.)
 
+## Integrations (make the scanner usable inside any agent stack)
+- [ ] **MCP server wrapper** — expose `scan_store` / `scan_files` as Model Context Protocol tools so any MCP-compatible agent or platform can call the scanner with one config line. Hard rule: tools return **findings metadata only** (counts, types, risk scores, masked samples) — never raw detected values, since chat transcripts are themselves a data store.
+- [ ] Agent-platform tool wrappers (Agency Swarm / LangChain Tool, etc.) — thin adapters over the same detection core, built per marketplace demand.
+
 ## Compliance & reporting
 - [ ] HTML report (alongside Markdown)
 - [ ] Map findings to **OWASP LLM Top 10 / GDPR / ISO 27001 / SOC 2** (pluggable per jurisdiction)
