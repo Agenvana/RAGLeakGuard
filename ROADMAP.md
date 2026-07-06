@@ -32,6 +32,10 @@ Early development (the **Diagnose** stage). Checkboxes are intent, not commitmen
 - [ ] HTML report (alongside Markdown)
 - [ ] Map findings to **OWASP LLM Top 10 / GDPR / ISO 27001 / SOC 2** (pluggable per jurisdiction)
 
+## Docs & website
+- [ ] **README.zh-TW.md** — Traditional Chinese README (linked at the top of the English one). Standard OSS practice; widens adoption in the Taiwanese dev community and pairs with the Taiwan locale pack + the OWASP zh-TW translation plan. Any session can do this; ~91 lines.
+- **Standing rule:** this ROADMAP stays in the repo permanently, website or no website. The repo is the builder-facing source of truth; ragleakguard.com is the buyer-facing story. The site may *summarize* the roadmap; it never replaces it.
+
 ## Product stages
 - [ ] **Fix** — tokenise/redact sensitive data *before* embedding; deletion-safe RAG.
 - [ ] **Prove** — compliance & erasure reports; hosted control plane (*RAGLeakGuard Cloud*).
