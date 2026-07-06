@@ -24,6 +24,7 @@ Early development (the **Diagnose** stage). Checkboxes are intent, not commitmen
 - [ ] **Files/folder connector (`--source files --path ./docs`)** — scan source documents & transcripts BEFORE they're uploaded to platform-bundled knowledge bases (Vapi, ElevenLabs, agent-builder platforms whose vector stores users can't reach). The pre-upload gate for closed platforms; pairs with `monitor` watching an "outbox" folder. (From Belle's voice-agent question, 2026-07-05.)
 
 ## Integrations (make the scanner usable inside any agent stack)
+**Repo layout rule:** all open adapters live in THIS repo (MCP under the package as an optional extra, e.g. `pip install ragleakguard[mcp]`; platform agents under `integrations/<platform>/`). One repo concentrates stars, issues, and credibility instead of fragmenting them. A separate public repo only if a marketplace's listing process forces one. The Cloud stays in its own private repo (it's the paid product).
 - [ ] **MCP server wrapper** — expose `scan_store` / `scan_files` as Model Context Protocol tools so any MCP-compatible agent or platform can call the scanner with one config line. Hard rule: tools return **findings metadata only** (counts, types, risk scores, masked samples) — never raw detected values, since chat transcripts are themselves a data store.
 - [ ] Agent-platform tool wrappers (Agency Swarm / LangChain Tool, etc.) — thin adapters over the same detection core, built per marketplace demand.
 
