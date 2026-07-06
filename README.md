@@ -1,5 +1,7 @@
 # RAGLeakGuard
 
+**English** | [繁體中文](README.zh-TW.md)
+
 > Scan your AI's vector database for exposed sensitive data — before it becomes a breach you can't delete.
 
 **RAGLeakGuard** is a CLI that connects to your vector store (Chroma today; more soon), reads what's stored, detects sensitive data (PII, health, financial), and writes a **risk-scored report**. No changes to your app — point it at the store and scan.
