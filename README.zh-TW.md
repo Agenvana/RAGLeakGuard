@@ -1,5 +1,11 @@
 # RAGLeakGuard
 
+[![PyPI](https://img.shields.io/pypi/v/ragleakguard)](https://pypi.org/project/ragleakguard/)
+[![Downloads](https://img.shields.io/pypi/dm/ragleakguard)](https://pypi.org/project/ragleakguard/)
+[![CI](https://github.com/Agenvana/RAGLeakGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/Agenvana/RAGLeakGuard/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/ragleakguard)](https://pypi.org/project/ragleakguard/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 [English](README.md) | **繁體中文**
 
 > 掃描你的 AI 向量資料庫中暴露的敏感資料——在它變成一場無法刪除的資料外洩之前。
