@@ -37,6 +37,6 @@ Early development (the **Diagnose** stage). Checkboxes are intent, not commitmen
 - **Standing rule:** this ROADMAP stays in the repo permanently, website or no website. The repo is the builder-facing source of truth; ragleakguard.com is the buyer-facing story. The site may *summarize* the roadmap; it never replaces it.
 
 ## Product stages
-- [ ] **Fix** — tokenise/redact sensitive data *before* embedding; deletion-safe RAG.
-- [ ] **Prove** — compliance & erasure reports; hosted control plane (*RAGLeakGuard Cloud*).
+- [ ] **Fix** (🔒 **patent pending** — US provisional filed July 2026) — tokenise sensitive data *before* embedding, so vectors and every derived copy (replicas, caches, logs, backups, exports) are created without raw sensitive data; originals live only in a secure vault under per-person keys. Erasing a person = one vault revocation, effective across **all** copies at once — no per-store deletion, no re-embedding. Deletion-safe RAG.
+- [ ] **Prove** — signed, auditor-ready erasure & compliance reports with a post-erasure verification re-scan (GDPR Art. 17 / HIPAA / AU Privacy Act mappings); hosted control plane (*RAGLeakGuard Cloud*).
 - [ ] Embedding-inversion demo — reconstruct text from a "safe" vector.

@@ -92,7 +92,7 @@ A monthly, methods-open report measuring where AI pipelines actually leak data �
 
 ## Roadmap
 
-See **[ROADMAP.md](ROADMAP.md)** — next up includes a custom AU phone recogniser, more connectors (Pinecone, pgvector), and the Fix/Prove layers.
+See **[ROADMAP.md](ROADMAP.md)** — next up includes a custom AU phone recogniser, more connectors (Pinecone, pgvector), and the **Fix** layer (**patent pending**): tokenize sensitive data *before* it's embedded, keep the originals in a secure vault, and erase a person from every copy — replicas, caches, backups included — with a single vault revocation; then **Prove** it with signed, auditor-ready erasure reports.
 
 ## License
 

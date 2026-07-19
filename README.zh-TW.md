@@ -92,7 +92,7 @@ ragleakguard monitor --source chroma --path ./sample_store --locale au --state r
 
 ## 路線圖
 
-見 **[ROADMAP.md](ROADMAP.md)**——接下來包括更多連接器（Pinecone、pgvector）、更多在地包（包含台灣：身分證字號與健保卡號），以及 Fix／Prove 階段。
+見 **[ROADMAP.md](ROADMAP.md)**——接下來包括更多連接器（Pinecone、pgvector）、更多在地包（包含台灣：身分證字號與健保卡號），以及 **Fix** 層（**專利申請中 / patent pending**）：在嵌入*之前*就將敏感資料代碼化（tokenize），原始值只存放於安全保險庫（vault）；單一撤銷操作即可讓某人的資料在所有副本——包含備份、快取、複本——同時且不可逆地失效；再由 **Prove** 層產出可供稽核、附驗證重掃的刪除證明報告。
 
 ## 授權條款
 
