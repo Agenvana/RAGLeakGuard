@@ -1,6 +1,6 @@
 # Benchmark reproducibility and evidence freeze
 
-This document separates the historical July 2026 report from current product behavior. The released PDF is evidence from a specific snapshot; it is not regenerated or silently replaced when the scanner changes.
+This document separates the historical July 2026 report from current product behavior. The released PDF is evidence from a specific snapshot; it is not regenerated or silently replaced when the scanner changes. The Git blobs at the publication snapshot are the canonical artifacts. A platform checkout is evidence only after its bytes have been verified against those blobs.
 
 ## July report identity
 
@@ -8,51 +8,55 @@ This document separates the historical July 2026 report from current product beh
 |---|---|
 | Report | `reports/AI-Data-Security-Report-01-2026-07.pdf` |
 | Title | *Your AI's Privacy Filter Speaks American. It Missed 1 in 3 Australian IDs.* |
-| Size | 274,321 bytes |
-| PDF SHA-256 | `92a67d878e373cdb97b33576c52778a202541366923bbb5cc4b3bf3a0e4db5a1` |
+| Size | 273,998 bytes |
+| PDF SHA-256 | `1d1391e4e70d17880ca8baab0f52e430684c018ee50569170be785131779d3d6` |
 | Benchmark/evaluation source commit | `be8cf616da62c1037b8f4ef7960378c73b866600` |
 | Immutable publication snapshot | `8dea47e351fe24efc61eb72c31c9bf9d61d13aa3` |
 | Publication date in Git | 2026-07-05 (AEST) |
 
-The publication snapshot is the canonical source SHA because it is the first commit containing the released PDF and it also contains the benchmark/evaluation source. At baseline, the report and both scripts are byte-unchanged between that snapshot and `75fb62766f7324264a6ed08847018a6cac348e8b`.
+The publication snapshot is the canonical source SHA because it is the first commit containing the released PDF and it also contains the benchmark/evaluation source. Its Git blob objects, not line-ending-converted working-tree copies, define the canonical bytes. Git confirms that the three paths are content-unchanged between that snapshot and `75fb62766f7324264a6ed08847018a6cac348e8b`.
 
 Additional SHA-256 values at the publication/current baseline:
 
 | File | SHA-256 |
 |---|---|
-| `scripts/benchmark.py` | `3249c010dee0868306e1b347dbffda83a94a0ff42227a6232fd2de1c071456f8` |
-| `scripts/clinic_eval.py` | `3a208c80cbbec6aaf96afaa9aa1ea00e376131f504588820eccdbfc6a06ef92b` |
+| `scripts/benchmark.py` | `3147358063fcc7884053f09be75a79a8df76b472fb46ed89453b403fe057492c` |
+| `scripts/clinic_eval.py` | `bf511ddbf31204b5bd2d6dbc774e2c25dacda8cba84ae62e8cb69654f767ae3f` |
 
 ## Evidence status
 
-**Implemented now:** the repository contains the released 10-page PDF, deterministic fixed-seed benchmark/evaluation scripts, synthetic-data generation, and source history binding them to the SHAs above. The public and private published PDF copies checked at this baseline have the same SHA-256.
+**Implemented now:** the repository contains the released 10-page PDF, deterministic fixed-seed benchmark/evaluation scripts, synthetic-data generation, and source history binding them to the SHAs above. Repository attributes mark report PDFs as binary and force LF checkouts for the two source scripts. The canonical publication-snapshot PDF blob renders all 10 pages without Poppler PDF parsing warnings.
+
+A prior Windows checkout applied CRLF conversion to these files before the repository attributes existed. Hashing that converted checkout produced different sizes/checksums and PDF parser warnings. Those checkout bytes were not canonical and are not evidence of the published artifact.
 
 **Known limitations:**
 
 - The PDF states that raw per-item results were published alongside it, but no raw July result file is present in the current public tree.
 - Historical transitive dependencies, spaCy model artifact, Python patch version, OS details, command transcripts, and raw outputs are not locked in this repository.
 - No report-specific Git tag exists at this baseline.
-- The existing PDF renders all 10 pages, but Poppler/pypdf emit structural parsing warnings. The frozen checksum covers those existing bytes; do not repair/re-export the PDF in place.
 
 Because of these gaps, the fixed seed supports repeatability in a recreated environment but does not by itself prove bit-for-bit historical reproducibility.
 
 ## Verify the frozen files
 
-From a clean checkout:
+Use Git's publication-snapshot blobs as the platform-stable source of bytes. From a clean checkout:
 
 ```bash
 git cat-file -e 8dea47e351fe24efc61eb72c31c9bf9d61d13aa3^{commit}
 git diff --exit-code 8dea47e351fe24efc61eb72c31c9bf9d61d13aa3 -- reports/AI-Data-Security-Report-01-2026-07.pdf scripts/benchmark.py scripts/clinic_eval.py
-sha256sum reports/AI-Data-Security-Report-01-2026-07.pdf scripts/benchmark.py scripts/clinic_eval.py
+git check-attr --all -- reports/AI-Data-Security-Report-01-2026-07.pdf scripts/benchmark.py scripts/clinic_eval.py
+python -c "import hashlib, subprocess; ref='8dea47e351fe24efc61eb72c31c9bf9d61d13aa3'; paths=('reports/AI-Data-Security-Report-01-2026-07.pdf','scripts/benchmark.py','scripts/clinic_eval.py'); [(lambda b: print(len(b), hashlib.sha256(b).hexdigest(), p))(subprocess.check_output(['git','cat-file','blob',f'{ref}:{p}'])) for p in paths]"
 ```
 
-PowerShell checksum equivalent:
+Expected canonical blob output:
 
-```powershell
-Get-FileHash -Algorithm SHA256 reports/AI-Data-Security-Report-01-2026-07.pdf, scripts/benchmark.py, scripts/clinic_eval.py
+```text
+273998 1d1391e4e70d17880ca8baab0f52e430684c018ee50569170be785131779d3d6 reports/AI-Data-Security-Report-01-2026-07.pdf
+17161 3147358063fcc7884053f09be75a79a8df76b472fb46ed89453b403fe057492c scripts/benchmark.py
+4618 bf511ddbf31204b5bd2d6dbc774e2c25dacda8cba84ae62e8cb69654f767ae3f scripts/clinic_eval.py
 ```
 
-The command output must match the table above. A mismatch is an evidence incident: stop, preserve both artifacts, and investigate history before publishing a claim.
+The blob output must match exactly. After checkout, a working-tree hash may be used as a secondary check, but it does not replace the blob calculation. A mismatch is an evidence incident: stop, preserve both versions, check attributes and filters, and investigate before publishing a claim. Do not regenerate, normalize, or recommit the protected artifacts to make a checksum match.
 
 ## Re-run the historical source
 
@@ -76,7 +80,7 @@ This reconstructs from ranged dependencies and therefore is a **comparison run**
 
 The following work is **planned** for a complete report evidence package:
 
-1. Start from the immutable publication snapshot and verify the checksums above.
+1. Start from the immutable publication snapshot and verify the canonical Git blob sizes/checksums above before inspecting working-tree copies.
 2. Recover the original raw output if available. Before public addition, verify that every value is synthetic and that no path, username, token, or private planning metadata is present.
 3. Record OS/architecture, Python executable and patch version, `pip freeze`, spaCy model name/version/checksum, locale/timezone, environment variables that affect results, and exact commands.
 4. Run each script in a clean environment, save stdout/stderr and machine-readable results without editing them, and calculate SHA-256 for every evidence file.
