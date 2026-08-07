@@ -1,0 +1,3 @@
+reports/*.pdf binary
+scripts/benchmark.py text eol=lf
+scripts/clinic_eval.py text eol=lf
