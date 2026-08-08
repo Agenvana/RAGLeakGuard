@@ -1,6 +1,6 @@
 # Threat model
 
-**Baseline:** current implementation at `75fb62766f7324264a6ed08847018a6cac348e8b`. RAGLeakGuard is an alpha data-inventory scanner, not a prevention, erasure, or compliance system.
+**Baseline:** implemented runtime behavior independently inspected at `fda413662dc0583cbee357169bf4b7a7a804ad2f`. RAGLeakGuard is an alpha data-inventory scanner, not a prevention, erasure, or compliance system.
 
 ## Scope
 
@@ -55,7 +55,7 @@ Out of scope because it is not implemented:
 |---|---|---|
 | Raw PII copied into monitor state or webhook | Snapshot and webhook builders use finding types/counts rather than finding text. Tests inject a raw-value canary. | State/webhooks still contain paths, collection names, and record IDs. Recursive allowlist/canary tests and metadata minimisation are **planned**. |
 | Raw or tenant-revealing data exposed through console/errors | Normal scan output is aggregate; reports do not include detected values. | Paths and record keys are printed, and webhook exceptions are printed verbatim. Sink-by-sink failure-path review is **planned**. |
-| Incomplete scan reported as success | Unsupported/malformed locales and unavailable detection runtimes raise typed errors. Both CLI commands preflight before reading the source; locale/usage failures exit 2 and dependency/model failures exit 3 without a report, state update, or webhook. | Connector completion evidence, bounds, cancellation, and concurrent-mutation handling remain **planned**. |
+| Incomplete scan reported as success | Unsupported/malformed locales and unavailable detection runtimes raise typed errors. Both CLI commands preflight before reading the source; locale/usage failures exit 2, while dependencies or a required model that cannot be loaded and prevent runtime initialization cause exit 3 without a report, state update, or webhook. | Connector completion evidence, bounds, cancellation, and concurrent-mutation handling remain **planned**. |
 | False negatives mistaken for absence of sensitive data | Reports state that detection is best-effort. The implemented `au` locale pack is opt-in, and unimplemented packs are not registered or advertised. | No detector is complete. Operators must not use a clean scan as proof of safety. |
 | Sensitive values exist only in Chroma metadata | Connector output includes metadata. | The current CLI detects document text only; metadata fields are not analyzed. Metadata coverage is **planned** connector hardening. |
 | Store availability impact or memory exhaustion | Connector code performs read/list/get calls only. | Collections and CLI items are materialized without pagination/bounds. Streaming, limits, cancellation, and completeness evidence are **planned**. |
@@ -65,7 +65,7 @@ Out of scope because it is not implemented:
 | Alert loss, duplication, or spoofing | Webhook exceptions are printed; exposure changes exit 1. | No durable outbox, retry/backoff, idempotency, signature, response policy, or dead-letter state exists. |
 | Webhook exfiltration or internal-service access | The URL is explicitly operator supplied. | No scheme/host allowlist or payload signing exists. Treat webhook configuration as privileged. |
 | Risk score misclassification | A deterministic static severity map and tests cover basic high/empty cases. | Policy is unversioned and incomplete for some detected types; golden policy coverage is **planned**. |
-| Dependency/model compromise or non-reproducible build | CI installs declared extras and a named spaCy model. | Dependency ranges and downloaded model are not locked; secret/dependency scans, provenance, and a finite matrix are **planned**. |
+| Dependency/model compromise or non-reproducible build | CI installs declared extras and a named spaCy model. | Presidio may attempt model acquisition at runtime when the model is absent; this PR does not change or disable that production behavior. Runtime acquisition controls and exact model artifact/version pinning are separate residual hardening concerns, alongside unlocked dependency ranges, secret/dependency scans, provenance, and a finite test matrix. |
 | Historical report claim cannot be reproduced exactly | Fixed-seed scripts and the PDF are in Git. | Historical environment and raw public outputs are incomplete; see [Benchmark reproducibility](BENCHMARK_REPRODUCIBILITY.md). |
 
 ## Security review triggers

@@ -87,9 +87,14 @@ The state file and webhook payloads contain **record ids, finding types, and cou
 - **Locale packs (`--locale`):** `au` (Medicare / phone / TFN / ABN / ACN) — the only implemented opt-in country pack. Other packs are [planned](ROADMAP.md).
 
 Locale codes are case-insensitive and surrounding whitespace is ignored. Unsupported or malformed
-locale input exits with code 2. Missing detection dependencies or the required spaCy model exit with
-code 3. Both checks run before the source is read, so these failures do not write a report or monitor
-state and do not send a webhook.
+locale input exits with code 2. If detection dependencies or the required spaCy model cannot be loaded,
+detection-runtime initialization cannot complete and the command exits with code 3. Both checks run
+before the source is read, so these failures do not write a report or monitor state and do not send a
+webhook.
+
+When the required model is absent, Presidio may attempt to acquire it during initialization. This PR
+does not change or disable that production behavior. Runtime model acquisition and exact model pinning
+remain separate residual hardening concerns.
 
 ## 📊 The AI Data Security Report
 

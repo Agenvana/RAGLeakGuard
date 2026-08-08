@@ -1,4 +1,5 @@
 """Fail-closed locale and detection-runtime regression tests."""
+import re
 from pathlib import Path
 
 import pytest
@@ -63,7 +64,9 @@ def test_detect_validates_locale_before_empty_text(monkeypatch):
         (OSError(PRIVACY_CANARY), detection.MissingDetectionModelError),
     ],
 )
-def test_detect_wraps_runtime_failures_without_raw_error(monkeypatch, raw_error, typed_error):
+def test_validate_detection_runtime_loads_analyzer_and_wraps_failures(
+    monkeypatch, raw_error, typed_error
+):
     def fail_to_build():
         raise raw_error
 
@@ -71,7 +74,7 @@ def test_detect_wraps_runtime_failures_without_raw_error(monkeypatch, raw_error,
     monkeypatch.setattr(detection, "_build_analyzer", fail_to_build)
     try:
         with pytest.raises(typed_error) as caught:
-            detection.detect("deterministic synthetic text")
+            detection.validate_detection_runtime()
     finally:
         detection._analyzer.cache_clear()
 
@@ -135,27 +138,31 @@ def test_cli_locale_failure_on_zero_item_source_creates_no_artifact_or_alert(
 
 @pytest.mark.parametrize("command", ["scan", "monitor"])
 @pytest.mark.parametrize(
-    "runtime_error_type",
+    "raw_error",
     [
-        detection.MissingDetectionDependencyError,
-        detection.MissingDetectionModelError,
+        ImportError(PRIVACY_CANARY),
+        OSError(PRIVACY_CANARY),
     ],
     ids=["missing-dependency", "missing-model"],
 )
 def test_cli_runtime_failure_on_zero_item_source_preserves_artifact_and_sends_no_alert(
-    monkeypatch, tmp_path, command, runtime_error_type
+    monkeypatch, tmp_path, command, raw_error
 ):
-    def fail_preflight(locale):
-        raise runtime_error_type(PRIVACY_CANARY)
+    def fail_to_build():
+        raise raw_error
 
-    monkeypatch.setattr(cli, "validate_detection_runtime", fail_preflight)
+    detection._analyzer.cache_clear()
+    monkeypatch.setattr(detection, "_build_analyzer", fail_to_build)
     source_calls = _patch_source(monkeypatch, [])
     webhook_calls = []
     monkeypatch.setattr(monitoring, "post_webhook", lambda *args, **kwargs: webhook_calls.append(args))
     args, artifact = _command_args(command, tmp_path)
     artifact.write_text("sentinel", encoding="utf-8")
 
-    result = CliRunner().invoke(cli.app, args)
+    try:
+        result = CliRunner().invoke(cli.app, args)
+    finally:
+        detection._analyzer.cache_clear()
 
     assert result.exit_code == cli.EXIT_DETECTION_RUNTIME
     assert isinstance(result.exception, SystemExit)
@@ -247,3 +254,16 @@ def test_cli_help_advertises_only_implemented_locale_and_failure_exit(command):
     assert not any(locale in normalized_output for locale in ("uk |", "sg |", "in ("))
     assert "2 = usage/locale error" in normalized_output
     assert "3 = detection unavailable" in normalized_output
+
+
+@pytest.mark.parametrize(
+    ("readme", "heading"),
+    [("README.md", "## Detection"), ("README.zh-TW.md", "## 偵測能力")],
+)
+def test_readme_locale_pack_entry_advertises_only_implemented_pack(readme, heading):
+    text = (Path(__file__).resolve().parents[1] / readme).read_text(encoding="utf-8")
+    section = text.split(heading, maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+    locale_entries = [line for line in section.splitlines() if "--locale" in line]
+
+    assert len(locale_entries) == 1
+    assert re.findall(r"`([a-z]{2})`", locale_entries[0]) == ["au"]
