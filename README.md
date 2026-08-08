@@ -84,7 +84,12 @@ The state file and webhook payloads contain **record ids, finding types, and cou
 ## Detection
 
 - **Default:** global + US recognisers — SSN, bank number, driver license, credit card, email, phone, names, locations, dates, IP, crypto…
-- **Locale packs (`--locale`):** `au` (Medicare / TFN / ABN), `uk`, `sg`, `in` — opt-in country IDs.
+- **Locale packs (`--locale`):** `au` (Medicare / phone / TFN / ABN / ACN) — the only implemented opt-in country pack. Other packs are [planned](ROADMAP.md).
+
+Locale codes are case-insensitive and surrounding whitespace is ignored. Unsupported or malformed
+locale input exits with code 2. Missing detection dependencies or the required spaCy model exit with
+code 3. Both checks run before the source is read, so these failures do not write a report or monitor
+state and do not send a webhook.
 
 ## 📊 The AI Data Security Report
 

@@ -52,7 +52,7 @@ Webhook payloads contain timestamp, source/path, aggregate totals, record keys, 
 
 ### CLI and failure behavior
 
-[cli.py](../src/ragleakguard/cli.py) provides Typer commands and writes operator messages to the console. Unsupported sources and missing required Chroma paths exit 2. Monitor dependency/model failures exit 2. Scan dependency/model failures currently exit 0 without a report, and unsupported locale strings silently add no locale recognizers. Fail-closed behavior is **planned**; current callers must not treat those cases as completed scans.
+[cli.py](../src/ragleakguard/cli.py) provides Typer commands and writes operator messages to the console. Unsupported sources, missing required Chroma paths, and malformed or unsupported locales exit 2. Missing detection dependencies or the required spaCy model exit 3. Locale and detection-runtime preflight runs before the source is read, including for an empty source; a failure does not write a report or monitor state and cannot send a webhook. The public detection API exposes typed errors for malformed locales, unsupported locales, missing dependencies, and a missing model.
 
 ## Trust boundaries
 
@@ -66,6 +66,6 @@ See the [threat model](THREAT_MODEL.md) for assets, abuse cases, and residual ri
 
 ## Planned, not implemented
 
-The public [roadmap](../ROADMAP.md) tracks possible additional locales, connectors, file scanning, integrations, HTML/compliance reporting, and future Prevent/Fix and Prove stages. Phase 0 hardening also plans fail-closed execution, bounded connectors, a versioned risk policy, privacy-safe finding-level monitoring, webhook minimisation, durable alert delivery, packaged demos, and reproducible releases.
+The public [roadmap](../ROADMAP.md) tracks possible additional locales, connectors, file scanning, integrations, HTML/compliance reporting, and future Prevent/Fix and Prove stages. Phase 0 hardening also plans bounded connectors, a versioned risk policy, privacy-safe finding-level monitoring, webhook minimisation, durable alert delivery, packaged demos, and reproducible releases.
 
 No Prevent/Fix vault, erasure mechanism, signed proof, multi-tenant Control Plane, certification, or hosted service is implemented in this repository.

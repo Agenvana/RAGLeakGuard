@@ -9,6 +9,34 @@ import re
 from functools import lru_cache
 from typing import List, Dict, Optional
 
+
+class DetectionError(Exception):
+    """Base class for detection configuration and runtime failures."""
+
+
+class LocaleError(DetectionError):
+    """Base class for invalid locale selection."""
+
+
+class MalformedLocaleError(LocaleError):
+    """Raised when locale input is empty or not a two-letter country code."""
+
+
+class UnsupportedLocaleError(LocaleError):
+    """Raised when a well-formed locale has no implemented pack."""
+
+
+class DetectionRuntimeError(DetectionError):
+    """Base class for unavailable detection runtime components."""
+
+
+class MissingDetectionDependencyError(DetectionRuntimeError):
+    """Raised when the optional detection dependencies are unavailable."""
+
+
+class MissingDetectionModelError(DetectionRuntimeError):
+    """Raised when the required detection model is unavailable."""
+
 # Australian Medicare-style number (matches our synthetic fixture; tune for production).
 _MEDICARE_PATTERN = r"\b[2-6]\d{7}\s?\d\s?\d\b"
 
@@ -47,6 +75,8 @@ DEFAULT_ENTITIES = [
 LOCALE_PACKS = {
     "au": ["AU_MEDICARE", "AU_PHONE", "AU_TFN", "AU_ABN", "AU_ACN"],
 }
+
+_LOCALE_CODE = re.compile(r"^[a-z]{2}$")
 
 _DATE_LIKE = re.compile(r"\d\s?[/\-.]\s?\d|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", re.I)
 
@@ -121,8 +151,25 @@ def _postprocess(raw: List[Dict]) -> List[Dict]:
     return result
 
 
-@lru_cache(maxsize=1)
-def _analyzer():
+def normalize_locale(locale: Optional[str]) -> Optional[str]:
+    """Normalize a supported locale or raise a typed validation error.
+
+    Locale codes are case-insensitive and may have surrounding whitespace. Empty,
+    whitespace-only, non-string, and non-two-letter inputs are malformed.
+    """
+    if locale is None:
+        return None
+    if not isinstance(locale, str):
+        raise MalformedLocaleError("Locale must be a two-letter country code.")
+    normalized = locale.strip().lower()
+    if not normalized or not _LOCALE_CODE.fullmatch(normalized):
+        raise MalformedLocaleError("Locale must be a two-letter country code.")
+    if normalized not in LOCALE_PACKS:
+        raise UnsupportedLocaleError("Locale pack is not implemented.")
+    return normalized
+
+
+def _build_analyzer():
     from presidio_analyzer import AnalyzerEngine, PatternRecognizer, Pattern
     from presidio_analyzer.nlp_engine import NlpEngineProvider
 
@@ -160,17 +207,39 @@ def _analyzer():
     return analyzer
 
 
+@lru_cache(maxsize=1)
+def _analyzer():
+    try:
+        return _build_analyzer()
+    except ImportError:
+        raise MissingDetectionDependencyError(
+            "Optional detection dependencies are unavailable."
+        ) from None
+    except OSError:
+        raise MissingDetectionModelError(
+            "The required detection model is unavailable."
+        ) from None
+
+
+def validate_detection_runtime(locale: Optional[str] = None) -> Optional[str]:
+    """Validate locale selection and load the required detection runtime."""
+    normalized = normalize_locale(locale)
+    _analyzer()
+    return normalized
+
+
 def detect(text: str, locale: Optional[str] = None) -> List[Dict]:
     """Return findings [{type, start, end, score, text}].
 
     locale: optional country pack (e.g. "au") that adds country-specific recognisers
             on top of the global/US defaults.
     """
+    normalized_locale = validate_detection_runtime(locale)
     if not text or not text.strip():
         return []
     entities = list(DEFAULT_ENTITIES)
-    if locale:
-        entities += LOCALE_PACKS.get(locale.lower(), [])
+    if normalized_locale:
+        entities += LOCALE_PACKS[normalized_locale]
     results = _analyzer().analyze(text=text, language="en", entities=entities)
     raw = [
         {"type": r.entity_type, "start": r.start, "end": r.end,
