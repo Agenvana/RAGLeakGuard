@@ -2,6 +2,7 @@
 from pathlib import Path
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from ragleakguard import cli
@@ -239,9 +240,10 @@ def test_monitor_successful_baseline_remains_compatible(monkeypatch, tmp_path):
 @pytest.mark.parametrize("command", ["scan", "monitor"])
 def test_cli_help_advertises_only_implemented_locale_and_failure_exit(command):
     result = CliRunner().invoke(cli.app, [command, "--help"])
-    normalized_output = " ".join(result.output.split())
+    normalized_output = " ".join(unstyle(result.output).split())
 
     assert result.exit_code == 0
-    assert "Locale pack: au" in result.output
-    assert not any(locale in result.output for locale in ("uk |", "sg |", "in ("))
+    assert "Locale pack: au" in normalized_output
+    assert not any(locale in normalized_output for locale in ("uk |", "sg |", "in ("))
+    assert "2 = usage/locale error" in normalized_output
     assert "3 = detection unavailable" in normalized_output
