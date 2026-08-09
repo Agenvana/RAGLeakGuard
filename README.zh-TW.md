@@ -84,7 +84,11 @@ ragleakguard monitor --source chroma --path ./sample_store --locale au --state r
 ## 偵測能力
 
 - **預設：**全球 + 美國識別器——SSN、銀行帳號、駕照、信用卡、Email、電話、姓名、地點、日期、IP、加密貨幣地址……
-- **在地包（`--locale`）：**`au`（Medicare / TFN / ABN）、`uk`、`sg`、`in`——各國身分識別碼，選用啟用。
+- **在地包（`--locale`）：**`au`（Medicare / 電話 / TFN / ABN / ACN）——目前唯一已實作、可選用的國家在地包。其他在地包僅列於[規劃](ROADMAP.md)，尚未實作。
+
+語系代碼不分大小寫，並會忽略前後空白。格式錯誤或不支援的語系輸入會以 exit code 2 結束。如果偵測相依套件或所需的 spaCy 模型無法載入，使偵測執行階段無法完成初始化，命令會以 exit code 3 結束。兩項驗證都在存取來源前執行，因此失敗時不會寫入報告或監控狀態，也不會傳送 webhook。
+
+缺少所需模型時，Presidio 可能會在初始化期間嘗試取得模型。RAGLeakGuard 目前未覆寫或停用 Presidio 的這項行為。如何控管執行階段模型取得，以及如何精確鎖定模型，仍是另外的殘餘強化議題。
 
 ## 📊 AI 資料安全報告（The AI Data Security Report）
 

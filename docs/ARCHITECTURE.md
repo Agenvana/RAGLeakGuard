@@ -1,6 +1,6 @@
 # Architecture
 
-**Baseline:** implemented behavior inspected at Git commit `75fb62766f7324264a6ed08847018a6cac348e8b` on 2026-08-07. This is an alpha architecture description, not a stability or production-readiness guarantee.
+**Baseline:** implemented runtime behavior independently inspected at Git commit `fda413662dc0583cbee357169bf4b7a7a804ad2f` on 2026-08-09. This is an alpha architecture description, not a stability or production-readiness guarantee.
 
 ## Implemented now
 
@@ -34,6 +34,8 @@ Pinecone is not implemented: an optional dependency and placeholder function exi
 
 [detect.py](../src/ragleakguard/detect.py) builds a cached Microsoft Presidio analyzer using the `en_core_web_sm` spaCy model. Default detection requests global/US entity types. The only implemented optional locale pack is `au`, which adds Medicare, phone, TFN, ABN, and ACN recognizers. TFN/ABN/ACN candidates pass checksum validation; post-processing also applies date/phone validation and overlap suppression.
 
+When the required model is absent, Presidio may attempt to acquire it during analyzer initialization. RAGLeakGuard does not currently override or disable this Presidio behavior. Controlling runtime model acquisition and pinning the exact model artifact and version remain separate residual hardening concerns.
+
 Findings contain entity type, span, confidence score, and the detected text while in process. The current report consumes only aggregated type counts. Callers importing `detect()` receive the finding dictionaries, including detected text, and are responsible for protecting them.
 
 ### Risk report
@@ -52,7 +54,7 @@ Webhook payloads contain timestamp, source/path, aggregate totals, record keys, 
 
 ### CLI and failure behavior
 
-[cli.py](../src/ragleakguard/cli.py) provides Typer commands and writes operator messages to the console. Unsupported sources and missing required Chroma paths exit 2. Monitor dependency/model failures exit 2. Scan dependency/model failures currently exit 0 without a report, and unsupported locale strings silently add no locale recognizers. Fail-closed behavior is **planned**; current callers must not treat those cases as completed scans.
+[cli.py](../src/ragleakguard/cli.py) provides Typer commands and writes operator messages to the console. Unsupported sources, missing required Chroma paths, and malformed or unsupported locales exit 2. If detection dependencies or the required spaCy model cannot be loaded and runtime initialization cannot complete, the commands exit 3. Locale and detection-runtime preflight runs before the source is read, including for an empty source; a failure does not write a report or monitor state and cannot send a webhook. The public detection API exposes typed errors for malformed locales, unsupported locales, missing dependencies, and a missing model.
 
 ## Trust boundaries
 
@@ -66,6 +68,6 @@ See the [threat model](THREAT_MODEL.md) for assets, abuse cases, and residual ri
 
 ## Planned, not implemented
 
-The public [roadmap](../ROADMAP.md) tracks possible additional locales, connectors, file scanning, integrations, HTML/compliance reporting, and future Prevent/Fix and Prove stages. Phase 0 hardening also plans fail-closed execution, bounded connectors, a versioned risk policy, privacy-safe finding-level monitoring, webhook minimisation, durable alert delivery, packaged demos, and reproducible releases.
+The public [roadmap](../ROADMAP.md) tracks possible additional locales, connectors, file scanning, integrations, HTML/compliance reporting, and future Prevent/Fix and Prove stages. Phase 0 hardening also plans bounded connectors, a versioned risk policy, privacy-safe finding-level monitoring, webhook minimisation, durable alert delivery, packaged demos, and reproducible releases.
 
 No Prevent/Fix vault, erasure mechanism, signed proof, multi-tenant Control Plane, certification, or hosted service is implemented in this repository.
