@@ -1,6 +1,6 @@
 # Architecture
 
-**Baseline:** Issue #4 starts from Git commit `96ec049af0800a5e62568b15732df4449d5f2224`; the versioned risk-policy changes described below require independent review on the exact pull-request commit. This is an alpha architecture description, not a stability or production-readiness guarantee.
+**Baseline:** implemented runtime behavior independently inspected at Git commit `63112accf4646296982bf120eab88b821349ef9e` on 2026-08-09. This is an alpha architecture description, not a stability or production-readiness guarantee.
 
 ## Implemented now
 

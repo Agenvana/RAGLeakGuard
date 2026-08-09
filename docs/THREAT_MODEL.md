@@ -1,6 +1,6 @@
 # Threat model
 
-**Baseline:** Issue #4 starts from `96ec049af0800a5e62568b15732df4449d5f2224`; the versioned risk-policy changes described below require independent review on the exact pull-request commit. RAGLeakGuard is an alpha data-inventory scanner, not a prevention, erasure, or compliance system.
+**Baseline:** implemented runtime behavior independently inspected at `63112accf4646296982bf120eab88b821349ef9e` on 2026-08-09. RAGLeakGuard is an alpha data-inventory scanner, not a prevention, erasure, or compliance system.
 
 ## Scope
 
