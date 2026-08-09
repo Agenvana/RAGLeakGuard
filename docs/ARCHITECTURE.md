@@ -34,7 +34,7 @@ Pinecone is not implemented: an optional dependency and placeholder function exi
 
 [detect.py](../src/ragleakguard/detect.py) builds a cached Microsoft Presidio analyzer using the `en_core_web_sm` spaCy model. Default detection requests global/US entity types. The only implemented optional locale pack is `au`, which adds Medicare, phone, TFN, ABN, and ACN recognizers. TFN/ABN/ACN candidates pass checksum validation; post-processing also applies date/phone validation and overlap suppression.
 
-When the required model is absent, Presidio may attempt to acquire it during analyzer initialization. This PR does not change or disable that production behavior. Controlling runtime model acquisition and pinning the exact model artifact and version remain separate residual hardening concerns.
+When the required model is absent, Presidio may attempt to acquire it during analyzer initialization. RAGLeakGuard does not currently override or disable this Presidio behavior. Controlling runtime model acquisition and pinning the exact model artifact and version remain separate residual hardening concerns.
 
 Findings contain entity type, span, confidence score, and the detected text while in process. The current report consumes only aggregated type counts. Callers importing `detect()` receive the finding dictionaries, including detected text, and are responsible for protecting them.
 

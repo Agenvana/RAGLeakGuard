@@ -92,9 +92,9 @@ detection-runtime initialization cannot complete and the command exits with code
 before the source is read, so these failures do not write a report or monitor state and do not send a
 webhook.
 
-When the required model is absent, Presidio may attempt to acquire it during initialization. This PR
-does not change or disable that production behavior. Runtime model acquisition and exact model pinning
-remain separate residual hardening concerns.
+When the required model is absent, Presidio may attempt to acquire it during initialization.
+RAGLeakGuard does not currently override or disable this Presidio behavior. Runtime model acquisition
+and exact model pinning remain separate residual hardening concerns.
 
 ## 📊 The AI Data Security Report
 
