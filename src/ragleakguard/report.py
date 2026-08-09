@@ -1,35 +1,107 @@
-"""Reporting — turn raw findings into a risk-scored, human-readable report.
+"""Reporting — turn aggregate findings into a risk-scored Markdown report.
 
 Severity weighting + regulatory framing + remediation = the security judgment
 that makes a scan trustworthy, rather than a noisy entity dump.
 """
-from typing import Dict
+import re
+from html import escape
+from typing import Dict, Optional
+from unicodedata import category
 
-SEVERITY = {
-    "AU_MEDICARE": "HIGH", "AU_TFN": "HIGH", "CREDIT_CARD": "HIGH",
-    "IBAN_CODE": "HIGH", "MEDICAL_LICENSE": "HIGH",
-    "PERSON": "MEDIUM", "EMAIL_ADDRESS": "MEDIUM", "PHONE_NUMBER": "MEDIUM",
-    "AU_PHONE": "MEDIUM", "LOCATION": "MEDIUM", "AU_ABN": "MEDIUM",
-    "DATE_TIME": "LOW", "IP_ADDRESS": "LOW", "AU_ACN": "LOW",
-}
-
-
-def _risk_level(by_type: Dict[str, int], n_flagged: int, n_records: int) -> str:
-    has_high = any(SEVERITY.get(t) == "HIGH" for t in by_type)
-    frac = (n_flagged / n_records) if n_records else 0.0
-    if has_high and frac >= 0.25:
-        return "HIGH"
-    if has_high or frac >= 0.50:
-        return "ELEVATED"
-    return "MODERATE" if by_type else "LOW"
+from ragleakguard.risk_policy import (
+    IDENTIFIER_SEVERITY,
+    POLICY_ID,
+    POLICY_VERSION,
+    UNKNOWN_SEVERITY,
+    assess_risk,
+    severity_for,
+)
 
 
-def build_report(by_type: Dict[str, int], n_records: int, n_flagged: int,
-                 source: str = "chroma", path: str = "") -> str:
-    """Build a Markdown risk report from aggregated findings."""
-    total = sum(by_type.values())
+# Read-only compatibility alias for callers that inspected the old report module.
+# Its semantics are now governed by POLICY_VERSION rather than a local mutable map.
+SEVERITY = IDENTIFIER_SEVERITY
+
+_POLICY_VERSION_LABEL = "- **Risk policy version:**"
+_POLICY_VERSION_PATTERN = re.compile(
+    r"^- \*\*Risk policy version:\*\* `([^`\r\n]+)`$"
+)
+_PRESENTATION_CONTROL_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
+_VISIBLE_CONTROL_ESCAPES = {"\t": "\\t", "\n": "\\n", "\r": "\\r"}
+
+
+def recorded_policy_version(markdown: str) -> Optional[str]:
+    """Return a report's recorded version, or None for legacy unversioned output.
+
+    Historical reports are never assigned the current version retroactively.
+    Ambiguous or malformed version attribution fails explicitly.
+    """
+    matching_lines = [
+        line for line in markdown.splitlines()
+        if line.startswith(_POLICY_VERSION_LABEL)
+    ]
+    if not matching_lines:
+        return None
+    if len(matching_lines) != 1:
+        raise ValueError("Report risk policy attribution is malformed or ambiguous.")
+    match = _POLICY_VERSION_PATTERN.fullmatch(matching_lines[0])
+    if match is None:
+        raise ValueError("Report risk policy attribution is malformed or ambiguous.")
+    return match.group(1)
+
+
+def _visible_presentation_character(character: str) -> str:
+    """Render presentation controls as visible, inert ASCII escape sequences."""
+    if character in _VISIBLE_CONTROL_ESCAPES:
+        return _VISIBLE_CONTROL_ESCAPES[character]
+    if category(character) not in _PRESENTATION_CONTROL_CATEGORIES:
+        return character
+    codepoint = ord(character)
+    if codepoint <= 0xFFFF:
+        return f"\\u{codepoint:04X}"
+    return f"\\U{codepoint:08X}"
+
+
+def _markdown_table_cell(value: str) -> str:
+    """Keep an unknown/custom identifier label visible without altering presentation."""
+    visible = "".join(_visible_presentation_character(char) for char in value)
+    return escape(visible, quote=True).replace("|", "&#124;")
+
+
+def _risk_level(
+    by_type: Dict[str, int],
+    n_flagged: int,
+    n_records: int,
+    *,
+    policy_version: str = POLICY_VERSION,
+) -> str:
+    """Compatibility helper returning the versioned assessment's level."""
+    return assess_risk(
+        by_type,
+        n_flagged,
+        n_records,
+        policy_version=policy_version,
+    ).level
+
+
+def build_report(
+    by_type: Dict[str, int],
+    n_records: int,
+    n_flagged: int,
+    source: str = "chroma",
+    path: str = "",
+    policy_version: str = POLICY_VERSION,
+) -> str:
+    """Build an attributable Markdown risk report from aggregate findings."""
+    aggregates = dict(by_type)
+    assessment = assess_risk(
+        aggregates,
+        n_flagged,
+        n_records,
+        policy_version=policy_version,
+    )
+    total = sum(aggregates.values())
     pct = f"{(n_flagged / n_records * 100):.0f}%" if n_records else "0%"
-    level = _risk_level(by_type, n_flagged, n_records)
 
     lines = [
         "# RAGLeakGuard — Sensitive Data Report",
@@ -38,15 +110,29 @@ def build_report(by_type: Dict[str, int], n_records: int, n_flagged: int,
         f"- **Records scanned:** {n_records}",
         f"- **Records with sensitive data:** {n_flagged} ({pct})",
         f"- **Total findings:** {total}",
-        f"- **Risk level:** **{level}**",
+        f"- **Risk policy:** `{POLICY_ID}`",
+        f"{_POLICY_VERSION_LABEL} `{assessment.policy_version}`",
+        f"- **Risk level:** **{assessment.level}**",
+        f"- **Risk score:** **{assessment.score}/3**",
         "",
         "## Findings by type",
         "",
         "| Type | Count | Severity |",
         "|------|------:|----------|",
     ]
-    for t, c in sorted(by_type.items(), key=lambda kv: (-kv[1], kv[0])):
-        lines.append(f"| {t} | {c} | {SEVERITY.get(t, 'REVIEW')} |")
+    for entity_type, count in sorted(
+        aggregates.items(), key=lambda item: (-item[1], item[0])
+    ):
+        severity = severity_for(entity_type, policy_version=policy_version)
+        label = _markdown_table_cell(entity_type)
+        lines.append(f"| {label} | {count} | {severity} |")
+
+    if assessment.unknown_types:
+        lines += [
+            "",
+            f"> **{UNKNOWN_SEVERITY}:** Unknown/custom identifier types remain visible and are "
+            "conservatively treated as high-impact when calculating the overall risk level.",
+        ]
 
     lines += [
         "",

@@ -1,6 +1,6 @@
 # Architecture
 
-**Baseline:** implemented runtime behavior independently inspected at Git commit `fda413662dc0583cbee357169bf4b7a7a804ad2f` on 2026-08-09. This is an alpha architecture description, not a stability or production-readiness guarantee.
+**Baseline:** Issue #4 starts from Git commit `96ec049af0800a5e62568b15732df4449d5f2224`; the versioned risk-policy changes described below require independent review on the exact pull-request commit. This is an alpha architecture description, not a stability or production-readiness guarantee.
 
 ## Implemented now
 
@@ -40,9 +40,11 @@ Findings contain entity type, span, confidence score, and the detected text whil
 
 ### Risk report
 
-[report.py](../src/ragleakguard/report.py) maps a fixed set of entity types to `HIGH`, `MEDIUM`, or `LOW`, computes one overall level, and emits Markdown. The report includes aggregate counts plus the configured source and path; unknown entity types are labeled `REVIEW`.
+[risk_policy.py](../src/ragleakguard/risk_policy.py) implements the source-controlled `RLG-ID-RISK@1.0.0` contract. Its immutable matrix assigns a severity to every currently requested default/global-US entity and every entity in the implemented `au` locale pack. Import-time validation fails if implemented detector types and the matrix diverge. [report.py](../src/ragleakguard/report.py) consumes aggregate type counts and record counts, applies that policy, and emits Markdown containing the policy identifier/version, level, and ordinal score.
 
-The severity map has no policy version and is not exhaustive for every default Presidio type. A versioned, fully tested policy is **planned**. The recommendations in a report are guidance; RAGLeakGuard does not execute prevention, deletion, or proof operations.
+The overall policy retains the inclusive 25% high-impact and 50% prevalence thresholds using exact integer comparisons. Unknown/custom types remain visible as `REVIEW` and are conservatively high-impact for overall classification. Contradictory aggregate counts are rejected rather than scored. Report rows are sorted deterministically; identical aggregate findings, record counts, and policy version produce identical classifications. See the complete [identifier risk policy](RISK_POLICY.md) for the matrix, validation rules, compatibility behavior, and limitations.
+
+Reports created before policy attribution remain legacy unversioned artifacts and are not retroactively assigned the current version. Adding policy attribution and an ordinal score is an additive Markdown-format change; the existing `build_report` positional call shape remains valid. The report still includes aggregate counts plus the configured source and path, and the recommendations remain guidance. RAGLeakGuard does not execute prevention, deletion, or proof operations.
 
 ### Monitor state and alerts
 
@@ -68,6 +70,6 @@ See the [threat model](THREAT_MODEL.md) for assets, abuse cases, and residual ri
 
 ## Planned, not implemented
 
-The public [roadmap](../ROADMAP.md) tracks possible additional locales, connectors, file scanning, integrations, HTML/compliance reporting, and future Prevent/Fix and Prove stages. Phase 0 hardening also plans bounded connectors, a versioned risk policy, privacy-safe finding-level monitoring, webhook minimisation, durable alert delivery, packaged demos, and reproducible releases.
+The public [roadmap](../ROADMAP.md) tracks possible additional locales, connectors, file scanning, integrations, HTML/compliance reporting, and future Prevent/Fix and Prove stages. Remaining Phase 0 hardening plans include bounded connectors, privacy-safe finding-level monitoring, webhook minimisation, durable alert delivery, packaged demos, and reproducible releases.
 
 No Prevent/Fix vault, erasure mechanism, signed proof, multi-tenant Control Plane, certification, or hosted service is implemented in this repository.
