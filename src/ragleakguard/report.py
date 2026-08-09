@@ -6,6 +6,7 @@ that makes a scan trustworthy, rather than a noisy entity dump.
 import re
 from html import escape
 from typing import Dict, Optional
+from unicodedata import category
 
 from ragleakguard.risk_policy import (
     IDENTIFIER_SEVERITY,
@@ -25,6 +26,8 @@ _POLICY_VERSION_LABEL = "- **Risk policy version:**"
 _POLICY_VERSION_PATTERN = re.compile(
     r"^- \*\*Risk policy version:\*\* `([^`\r\n]+)`$"
 )
+_PRESENTATION_CONTROL_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
+_VISIBLE_CONTROL_ESCAPES = {"\t": "\\t", "\n": "\\n", "\r": "\\r"}
 
 
 def recorded_policy_version(markdown: str) -> Optional[str]:
@@ -47,14 +50,22 @@ def recorded_policy_version(markdown: str) -> Optional[str]:
     return match.group(1)
 
 
+def _visible_presentation_character(character: str) -> str:
+    """Render presentation controls as visible, inert ASCII escape sequences."""
+    if character in _VISIBLE_CONTROL_ESCAPES:
+        return _VISIBLE_CONTROL_ESCAPES[character]
+    if category(character) not in _PRESENTATION_CONTROL_CATEGORIES:
+        return character
+    codepoint = ord(character)
+    if codepoint <= 0xFFFF:
+        return f"\\u{codepoint:04X}"
+    return f"\\U{codepoint:08X}"
+
+
 def _markdown_table_cell(value: str) -> str:
-    """Keep an unknown/custom identifier label visible without changing table structure."""
-    return (
-        escape(value, quote=True)
-        .replace("|", "&#124;")
-        .replace("\r", "\\r")
-        .replace("\n", "\\n")
-    )
+    """Keep an unknown/custom identifier label visible without altering presentation."""
+    visible = "".join(_visible_presentation_character(char) for char in value)
+    return escape(visible, quote=True).replace("|", "&#124;")
 
 
 def _risk_level(

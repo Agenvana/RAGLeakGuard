@@ -146,6 +146,63 @@ def test_unknown_type_label_cannot_change_markdown_table_structure():
 
 
 @pytest.mark.parametrize(
+    ("character", "visible_escape"),
+    [
+        pytest.param("\n", "\\n", id="line-feed"),
+        pytest.param("\r", "\\r", id="carriage-return"),
+        pytest.param("\t", "\\t", id="tab"),
+        pytest.param("\u0000", "\\u0000", id="null"),
+        pytest.param("\u000b", "\\u000B", id="vertical-tab"),
+        pytest.param("\u000c", "\\u000C", id="form-feed"),
+        pytest.param("\u001c", "\\u001C", id="file-separator"),
+        pytest.param("\u001d", "\\u001D", id="group-separator"),
+        pytest.param("\u001e", "\\u001E", id="record-separator"),
+        pytest.param("\u007f", "\\u007F", id="delete"),
+        pytest.param("\u0085", "\\u0085", id="next-line"),
+        pytest.param("\u061c", "\\u061C", id="arabic-letter-mark"),
+        pytest.param("\u200e", "\\u200E", id="left-to-right-mark"),
+        pytest.param("\u200f", "\\u200F", id="right-to-left-mark"),
+        pytest.param("\u2028", "\\u2028", id="line-separator"),
+        pytest.param("\u2029", "\\u2029", id="paragraph-separator"),
+        pytest.param("\u202d", "\\u202D", id="left-to-right-override"),
+        pytest.param("\u202e", "\\u202E", id="right-to-left-override"),
+        pytest.param("\u2066", "\\u2066", id="left-to-right-isolate"),
+        pytest.param("\u2067", "\\u2067", id="right-to-left-isolate"),
+        pytest.param("\u2068", "\\u2068", id="first-strong-isolate"),
+        pytest.param("\u2069", "\\u2069", id="pop-directional-isolate"),
+        pytest.param("\ud800", "\\uD800", id="surrogate"),
+    ],
+)
+def test_custom_label_presentation_controls_are_visible_and_inert(
+    character, visible_escape
+):
+    forged_content = "## FORGED LOW-RISK RESULT | 999 | LOW"
+    entity_type = f"CUSTOM{character}{forged_content}"
+    report = build_report({entity_type: 1}, n_records=100, n_flagged=1)
+    baseline = build_report({"CUSTOM_SAFE": 1}, n_records=100, n_flagged=1)
+    lines = report.splitlines()
+    baseline_lines = baseline.splitlines()
+
+    expected_label = (
+        f"CUSTOM{visible_escape}## FORGED LOW-RISK RESULT "
+        "&#124; 999 &#124; LOW"
+    )
+    represented_lines = [line for line in lines if "FORGED LOW-RISK RESULT" in line]
+
+    assert represented_lines == [f"| {expected_label} | 1 | REVIEW |"]
+    assert len(lines) == len(baseline_lines)
+    assert [line for line in lines if line.startswith("#")] == [
+        line for line in baseline_lines if line.startswith("#")
+    ]
+    assert sum(line.startswith("|") for line in lines) == sum(
+        line.startswith("|") for line in baseline_lines
+    )
+    assert "- **Risk level:** **ELEVATED**" in report
+    assert "- **Risk score:** **2/3**" in report
+    assert "conservatively treated as high-impact" in report
+
+
+@pytest.mark.parametrize(
     ("by_type", "n_records", "n_flagged"),
     [
         ({}, 1, 1),
