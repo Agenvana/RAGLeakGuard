@@ -39,11 +39,11 @@ Ordinary false positives and false negatives are expected limitations of best-ef
 
 ## Scope and current limitations
 
-**Implemented now:** local Chroma scanning, Presidio/spaCy-based detection, an opt-in Australian locale pack, fail-closed locale and detection-runtime preflight, aggregate Markdown reports, and scheduled monitor snapshots/webhook alerts.
+**Implemented now:** local Chroma scanning, Presidio/spaCy-based detection, an opt-in Australian locale pack, fail-closed locale and detection-runtime preflight, aggregate Markdown reports attributed to the versioned [`RLG-ID-RISK@1.0.0`](docs/RISK_POLICY.md) policy, and scheduled monitor snapshots/webhook alerts.
 
 **Known limitations:** the current connector materializes collection results; monitoring persists store paths plus collection/record keys; webhook payloads contain the store path and record keys; fingerprints cover finding types and counts rather than finding values; and webhook delivery has no durable outbox or signing. These are not security guarantees.
 
-**Planned:** bounded connector completion evidence, versioned risk policy, privacy-safe finding-level fingerprints, minimized/signed payloads, durable alert delivery, and reproducible release provenance.
+**Planned:** bounded connector completion evidence, privacy-safe finding-level fingerprints, minimized/signed payloads, durable alert delivery, and reproducible release provenance.
 
 The Prevent/Fix layer, erasure proof, Control Plane, multi-tenancy, vault/KMS, compliance certification, and assurance profile are not implemented and are outside the current supported surface.
 

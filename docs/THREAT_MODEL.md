@@ -1,6 +1,6 @@
 # Threat model
 
-**Baseline:** implemented runtime behavior independently inspected at `fda413662dc0583cbee357169bf4b7a7a804ad2f`. RAGLeakGuard is an alpha data-inventory scanner, not a prevention, erasure, or compliance system.
+**Baseline:** Issue #4 starts from `96ec049af0800a5e62568b15732df4449d5f2224`; the versioned risk-policy changes described below require independent review on the exact pull-request commit. RAGLeakGuard is an alpha data-inventory scanner, not a prevention, erasure, or compliance system.
 
 ## Scope
 
@@ -64,7 +64,7 @@ Out of scope because it is not implemented:
 | State tampering, corruption, or replay | Temporary-write plus replace reduces partial-file writes. | State has no schema validation, authentication, signing, rollback protection, or corruption recovery. |
 | Alert loss, duplication, or spoofing | Webhook exceptions are printed; exposure changes exit 1. | No durable outbox, retry/backoff, idempotency, signature, response policy, or dead-letter state exists. |
 | Webhook exfiltration or internal-service access | The URL is explicitly operator supplied. | No scheme/host allowlist or payload signing exists. Treat webhook configuration as privileged. |
-| Risk score misclassification | A deterministic static severity map and tests cover basic high/empty cases. | Policy is unversioned and incomplete for some detected types; golden policy coverage is **planned**. |
+| Risk score misclassification | The source-controlled [`RLG-ID-RISK@1.0.0`](RISK_POLICY.md) contract explicitly covers every current default and implemented-locale identifier type. It records its version in each new report; uses exact inclusive threshold comparisons; treats unknown/custom types as visible `REVIEW` findings with conservative high-impact overall handling; rejects contradictory aggregates; and has golden matrix, boundary, combination, compatibility, privacy, and determinism tests. | Severity remains context-independent and the 0-3 score is ordinal, not a probability, harm estimate, compliance determination, or completeness proof. Aggregate validation cannot prove connector or detector completeness. Historical reports without attribution remain unversioned and require regeneration for a policy-attributed result. |
 | Dependency/model compromise or non-reproducible build | CI installs declared extras and a named spaCy model. | Presidio may attempt model acquisition at runtime when the model is absent. RAGLeakGuard does not currently override or disable this Presidio behavior. Runtime acquisition controls and exact model artifact/version pinning are separate residual hardening concerns, alongside unlocked dependency ranges, secret/dependency scans, provenance, and a finite test matrix. |
 | Historical report claim cannot be reproduced exactly | Fixed-seed scripts and the PDF are in Git. | Historical environment and raw public outputs are incomplete; see [Benchmark reproducibility](BENCHMARK_REPRODUCIBILITY.md). |
 
