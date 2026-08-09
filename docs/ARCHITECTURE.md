@@ -1,6 +1,6 @@
 # Architecture
 
-**Baseline:** implemented runtime behavior independently inspected at Git commit `63112accf4646296982bf120eab88b821349ef9e` on 2026-08-09. This is an alpha architecture description, not a stability or production-readiness guarantee.
+**Baseline:** this revision describes the current source tree and executable tests. The monitor implementation is security-critical and still requires independent review on the exact final commit before merge. This is an alpha architecture description, not a stability or production-readiness guarantee.
 
 ## Implemented now
 
@@ -17,8 +17,9 @@ flowchart LR
     B --> C["Presidio + spaCy detector"]
     C --> D["Post-processing"]
     D --> E["Aggregate risk report"]
-    D --> F["Monitor snapshot"]
-    F --> G["Local JSON state"]
+    D --> F["Keyed monitor snapshot"]
+    I["Operator monitor key file"] --> F
+    F --> G["Authenticated local JSON state v2"]
     F --> H["Optional webhook"]
 ```
 
@@ -48,21 +49,26 @@ Reports created before policy attribution remain legacy unversioned artifacts an
 
 ### Monitor state and alerts
 
-[monitor.py](../src/ragleakguard/monitor.py) creates one snapshot entry per `collection:id` record key. Each entry stores the number of findings, counts by type, and a truncated SHA-256 digest of the canonical type/count pairs. State is written through a temporary file and `os.replace`.
+[monitor.py](../src/ragleakguard/monitor.py) requires an explicit 256-bit operator key file and an explicitly authorized `--initialize` when no state exists. The key file has a strict monitor purpose, construction identifier, and random non-secret key ID. The generator uses the operating system CSPRNG and never overwrites a path. There is no default/fallback key or hosted key service.
 
-This detects appearance, disappearance, and type/count changes. It does not detect a sensitive value changing to another value when its types and counts remain equal. The persisted JSON also contains scan time, source, store path, collection names, and record IDs. It does not intentionally store document text, spans, or detected values.
+Finding identity is the detector's exact type plus exact detected value. Score and position are deliberately excluded. Typed length-prefixed UTF-8 framing preserves exact code-point distinctions, and sorted repeated finding tokens give order-independent multiset behavior while retaining duplicate multiplicity. Separate labelled HMAC-SHA-256 subkeys produce full 256-bit finding tokens, aggregate fingerprints, store-scope tokens, record-correlation tokens, and state authentication. This detects equal-type/equal-count value replacement unless a residual cryptographic collision occurs.
 
-Webhook payloads contain timestamp, source/path, aggregate totals, record keys, and type counts. Delivery is one synchronous unsigned POST with no durable outbox, retry policy, or idempotency key. A finding-level privacy-safe fingerprint and minimized/durable alert contract are **planned**.
+The strict version-2 JSON checkpoint persists only the construction/key identifiers, a keyed store-scope token, token-keyed records containing finding count/full aggregate fingerprint, consistency totals, and an authenticator over the canonical state body. It omits raw source/store/state paths, collection/tenant names, record IDs, document text, detected values, spans, finding types, key material, and exception text. State loading rejects duplicate/unknown fields, wrong types, out-of-bound or inconsistent counts, invalid digests, corruption/tampering, unsupported versions, key/scope mismatches, and authentication failures before source access or diffing.
+
+Version-1 state is rejected without rewrite because aggregate type/count data cannot be losslessly converted to finding-value history. New baseline creation uses same-directory atomic no-overwrite installation; updates write/fsync a same-directory temporary file and call atomic replacement. Tested temporary-write/replacement failures preserve the prior checkpoint and emit no success/webhook. See the complete [monitor key and state contract](MONITOR_STATE.md) for schema, cryptography, lifecycle, rotation, recovery, compatibility, and limits.
+
+Webhook payloads still contain timestamp, source/path, aggregate totals, keyed record tokens, and type counts. Delivery remains one synchronous unsigned POST with no durable outbox, retry policy, or idempotency key. Webhook minimisation/signing and durable delivery are **planned** separate packages.
 
 ### CLI and failure behavior
 
-[cli.py](../src/ragleakguard/cli.py) provides Typer commands and writes operator messages to the console. Unsupported sources, missing required Chroma paths, and malformed or unsupported locales exit 2. If detection dependencies or the required spaCy model cannot be loaded and runtime initialization cannot complete, the commands exit 3. Locale and detection-runtime preflight runs before the source is read, including for an empty source; a failure does not write a report or monitor state and cannot send a webhook. The public detection API exposes typed errors for malformed locales, unsupported locales, missing dependencies, and a missing model.
+[cli.py](../src/ragleakguard/cli.py) provides Typer commands and writes operator messages to the console. Unsupported sources, missing required Chroma paths, and malformed or unsupported locales exit 2. If detection dependencies or the required spaCy model cannot be loaded and runtime initialization cannot complete, the commands exit 3. Monitor key/state, compatibility, fingerprint, and checkpoint failures exit 4 with static remediation. Locale/detection preflight and monitor key/state authentication complete before source access. A relevant failure does not update state, report monitor success/no-change, or send a webhook.
 
 ## Trust boundaries
 
 - The local vector store and its contents are sensitive input controlled by the operator.
 - The local process temporarily handles raw document text and detected values.
 - The report path and monitor state are local persistent outputs controlled by the operator.
+- The operator monitor key file is a local secret input; its permissions, backup, recovery, rotation, retirement, and scheduled-job access are operator trust boundaries.
 - A webhook crosses the local trust boundary and can disclose the current metadata fields to its receiver.
 - Package indexes, dependency downloads, the spaCy model download, and source-control/release systems are supply-chain boundaries.
 
@@ -70,6 +76,6 @@ See the [threat model](THREAT_MODEL.md) for assets, abuse cases, and residual ri
 
 ## Planned, not implemented
 
-The public [roadmap](../ROADMAP.md) tracks possible additional locales, connectors, file scanning, integrations, HTML/compliance reporting, and future Prevent/Fix and Prove stages. Remaining Phase 0 hardening plans include bounded connectors, privacy-safe finding-level monitoring, webhook minimisation, durable alert delivery, packaged demos, and reproducible releases.
+The public [roadmap](../ROADMAP.md) tracks possible additional locales, connectors, file scanning, integrations, HTML/compliance reporting, and future Prevent/Fix and Prove stages. Remaining Phase 0 hardening plans include bounded connectors, webhook minimisation/signing, durable alert delivery, packaged demos, and reproducible releases.
 
 No Prevent/Fix vault, erasure mechanism, signed proof, multi-tenant Control Plane, certification, or hosted service is implemented in this repository.

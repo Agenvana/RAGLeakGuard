@@ -68,18 +68,25 @@ ragleakguard scan --source chroma --path ./sample_store --locale au --report rep
 單次掃描告訴你今天的狀態；`monitor` 告訴你狀態何時改變：
 
 ```bash
-# 第一次執行會寫入基準線（只儲存指紋——絕不儲存你的資料）
-ragleakguard monitor --source chroma --path ./sample_store --locale au --state rlg-state.json
+# 產生本機 256-bit 監控金鑰；絕不覆寫既有路徑
+ragleakguard generate-monitor-key --output rlg-monitor-key.json
+
+# 明確授權建立新的、已驗證的 version-2 基準線
+ragleakguard monitor --source chroma --path ./sample_store --locale au \
+  --key-file rlg-monitor-key.json --state rlg-state.json --initialize
 
 # 之後的執行會與基準線比對，對「新增」或「變更」的發現發出警報
-ragleakguard monitor --source chroma --path ./sample_store --locale au --state rlg-state.json \
+ragleakguard monitor --source chroma --path ./sample_store --locale au \
+  --key-file rlg-monitor-key.json --state rlg-state.json \
   --webhook https://hooks.example.com/your-alert   # Slack / Discord / Zapier / n8n
 
 # 排入 cron（每小時）：exit code 1 = 偵測到新的暴露
-0 * * * *  ragleakguard monitor --source chroma --path /srv/store --state /var/lib/rlg/state.json --webhook $HOOK
+0 * * * *  ragleakguard monitor --source chroma --path /srv/store --key-file /etc/rlg/monitor-key.json --state /var/lib/rlg/state.json --webhook $HOOK
 ```
 
-狀態檔與 webhook 內容只包含**紀錄 ID、發現類型與數量**——絕不包含文件內容或偵測到的值。
+已驗證的狀態檔只包含完整長度、以金鑰產生的範圍／紀錄 token、發現層級指紋與驗證計數；不包含原始路徑、collection 名稱、紀錄 ID、文件文字、偵測值、span 或金鑰材料。Version 1 因缺少發現值歷史而會在不修改檔案的情況下被拒絕。缺少、無效、不相符或未通過驗證的金鑰／狀態會以 exit code 4 結束，且不進行 diff、不輸出成功訊息、不傳送 webhook。建立基準線必須使用 `--initialize`，且不會覆寫既有路徑。
+
+目前 webhook 仍是另一項已知限制：內容仍包含來源／store 路徑、發現類型／數量中繼資料與 keyed record token，且未簽署、沒有 durable delivery。金鑰權限、備份／復原、輪替、排程工作、version-1 處理、schema、密碼學建構與殘餘風險，請見[監控金鑰與狀態契約](docs/MONITOR_STATE.md)（英文）。
 
 ## 偵測能力
 

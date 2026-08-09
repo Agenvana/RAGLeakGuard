@@ -39,11 +39,11 @@ Ordinary false positives and false negatives are expected limitations of best-ef
 
 ## Scope and current limitations
 
-**Implemented now:** local Chroma scanning, Presidio/spaCy-based detection, an opt-in Australian locale pack, fail-closed locale and detection-runtime preflight, aggregate Markdown reports attributed to the versioned [`RLG-ID-RISK@1.0.0`](docs/RISK_POLICY.md) policy, and scheduled monitor snapshots/webhook alerts.
+**Implemented now:** local Chroma scanning, Presidio/spaCy-based detection, an opt-in Australian locale pack, fail-closed locale and detection-runtime preflight, aggregate Markdown reports attributed to the versioned [`RLG-ID-RISK@1.0.0`](docs/RISK_POLICY.md) policy, and scheduled monitoring with explicit operator keys, finding-level purpose-separated HMAC-SHA-256 fingerprints, authenticated privacy-minimized version-2 state, explicit initialization, and fail-closed version-1 rejection. See the [monitor key and state contract](docs/MONITOR_STATE.md).
 
-**Known limitations:** the current connector materializes collection results; monitoring persists store paths plus collection/record keys; webhook payloads contain the store path and record keys; fingerprints cover finding types and counts rather than finding values; and webhook delivery has no durable outbox or signing. These are not security guarantees.
+**Known limitations:** the current connector materializes collection results and has no completion evidence; detector false negatives remain; exact store-path spelling binds monitor scope; key protection/recovery/rotation and non-overlapping jobs are operator responsibilities; state authentication has no replay counter; and webhook payloads still contain source/store path, finding type/count metadata, and keyed record tokens. Webhook delivery has no minimisation/signing, durable outbox, retry policy, or idempotency. These are not security guarantees.
 
-**Planned:** bounded connector completion evidence, privacy-safe finding-level fingerprints, minimized/signed payloads, durable alert delivery, and reproducible release provenance.
+**Planned:** bounded connector completion evidence, minimized/signed webhook payloads, durable alert delivery, and reproducible release provenance.
 
 The Prevent/Fix layer, erasure proof, Control Plane, multi-tenancy, vault/KMS, compliance certification, and assurance profile are not implemented and are outside the current supported surface.
 

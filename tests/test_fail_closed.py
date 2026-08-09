@@ -1,4 +1,5 @@
-"""Fail-closed locale and detection-runtime regression tests."""
+"""Fail-closed locale, detection-runtime, and monitor-state regression tests."""
+import json
 import re
 from pathlib import Path
 
@@ -17,6 +18,7 @@ PATH_CANARY = "private-path-canary"
 SUCCESS_SIGNALS = (
     "Risk-scored report written",
     "baseline saved",
+    "baseline initialized",
     "No new exposure",
     "Webhook alert sent",
     "✓",
@@ -99,7 +101,14 @@ def _command_args(command, tmp_path, locale=None):
     if command == "scan":
         args += ["--report", str(artifact)]
     else:
-        args += ["--state", str(artifact), "--webhook", "https://hooks.invalid/canary"]
+        args += [
+            "--state",
+            str(artifact),
+            "--key-file",
+            str(tmp_path / "monitor-key.json"),
+            "--webhook",
+            "https://hooks.invalid/canary",
+        ]
     if locale is not None:
         args += ["--locale", locale]
     return args, artifact
@@ -192,16 +201,36 @@ def test_mid_scan_model_failure_preserves_artifact_and_sends_no_alert(
     webhook_calls = []
     monkeypatch.setattr(monitoring, "post_webhook", lambda *args, **kwargs: webhook_calls.append(args))
     args, artifact = _command_args(command, tmp_path)
-    artifact.write_text("sentinel", encoding="utf-8")
+    if command == "monitor":
+        key_path = tmp_path / "monitor-key.json"
+        monitoring.generate_key_file(str(key_path))
+        crypto = monitoring.MonitorCrypto(monitoring.load_key_file(str(key_path)))
+        scope = crypto.scope_token("chroma", str(tmp_path / PATH_CANARY))
+        baseline = monitoring.build_snapshot(
+            [SYNTHETIC_ITEM, dict(SYNTHETIC_ITEM, id="second")],
+            lambda text, locale=None: [],
+            crypto,
+            scope,
+        )
+        monitoring.save_state(
+            str(artifact), baseline, crypto, scope, initialize=True
+        )
+        before = artifact.read_bytes()
+    else:
+        artifact.write_text("sentinel", encoding="utf-8")
+        before = artifact.read_bytes()
 
     result = CliRunner().invoke(cli.app, args)
 
     assert result.exit_code == cli.EXIT_DETECTION_RUNTIME
     assert len(calls) == 2
-    assert artifact.read_text(encoding="utf-8") == "sentinel"
-    assert not (Path(f"{artifact}.tmp")).exists()
+    assert artifact.read_bytes() == before
+    assert not list(tmp_path.glob(".rlg-monitor-*.tmp"))
     assert not webhook_calls
-    assert {path.name for path in tmp_path.iterdir()} == {artifact.name}
+    expected = {artifact.name}
+    if command == "monitor":
+        expected.add("monitor-key.json")
+    assert {path.name for path in tmp_path.iterdir()} == expected
     _assert_private_failure(result)
 
 
@@ -236,12 +265,14 @@ def test_monitor_successful_baseline_remains_compatible(monkeypatch, tmp_path):
     monkeypatch.setattr(detection, "detect", lambda text, locale=None: [])
     _patch_source(monkeypatch, [SYNTHETIC_ITEM])
     args, state = _command_args("monitor", tmp_path, locale="AU")
+    monitoring.generate_key_file(str(tmp_path / "monitor-key.json"))
+    args.append("--initialize")
 
     result = CliRunner().invoke(cli.app, args)
 
     assert result.exit_code == 0
     assert state.exists()
-    assert "baseline saved" in result.output
+    assert "baseline initialized" in result.output
 
 
 @pytest.mark.parametrize("command", ["scan", "monitor"])
@@ -254,6 +285,10 @@ def test_cli_help_advertises_only_implemented_locale_and_failure_exit(command):
     assert not any(locale in normalized_output for locale in ("uk |", "sg |", "in ("))
     assert "2 = usage/locale error" in normalized_output
     assert "3 = detection unavailable" in normalized_output
+    if command == "monitor":
+        assert "4 = monitor key/state failure" in normalized_output
+        assert "--key-file" in normalized_output
+        assert "--initialize" in normalized_output
 
 
 @pytest.mark.parametrize(
@@ -267,3 +302,258 @@ def test_readme_locale_pack_entry_advertises_only_implemented_pack(readme, headi
 
     assert len(locale_entries) == 1
     assert re.findall(r"`([a-z]{2})`", locale_entries[0]) == ["au"]
+
+
+@pytest.mark.parametrize(
+    ("readme", "heading"),
+    [("README.md", "## Monitor"), ("README.zh-TW.md", "## Monitor")],
+)
+def test_readme_monitor_workflow_requires_key_and_explicit_initialization(
+    readme, heading
+):
+    text = (Path(__file__).resolve().parents[1] / readme).read_text(
+        encoding="utf-8"
+    )
+    section = text.split(heading, maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
+    assert "generate-monitor-key" in section
+    assert "--key-file" in section
+    assert "--initialize" in section
+    assert "exit code 4" in section or "exits 4" in section
+    assert "docs/MONITOR_STATE.md" in section
+
+
+def _prepare_valid_monitor_state(tmp_path, findings=None):
+    key_path = tmp_path / "monitor-key.json"
+    state_path = tmp_path / "state.json"
+    monitoring.generate_key_file(str(key_path))
+    crypto = monitoring.MonitorCrypto(monitoring.load_key_file(str(key_path)))
+    scope = crypto.scope_token("chroma", str(tmp_path / PATH_CANARY))
+    records = monitoring.build_snapshot(
+        [SYNTHETIC_ITEM],
+        lambda text, locale=None: list(findings or []),
+        crypto,
+        scope,
+    )
+    monitoring.save_state(
+        str(state_path), records, crypto, scope, initialize=True
+    )
+    return key_path, state_path, state_path.read_bytes()
+
+
+def test_monitor_missing_or_malformed_key_fails_before_source_and_preserves_state(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    webhook_calls = []
+    monkeypatch.setattr(
+        monitoring, "post_webhook", lambda *args, **kwargs: webhook_calls.append(args)
+    )
+    args, state = _command_args("monitor", tmp_path)
+    state.write_text("prior-state-sentinel", encoding="utf-8")
+    key_path = tmp_path / "monitor-key.json"
+    key_path.write_text(
+        '{"purpose":"wrong-purpose","key":"privacy-canary-that-must-not-be-printed"}',
+        encoding="utf-8",
+    )
+    before = state.read_bytes()
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == cli.EXIT_MONITOR_STATE
+    assert state.read_bytes() == before
+    assert not source_calls
+    assert not webhook_calls
+    _assert_private_failure(result)
+
+
+@pytest.mark.parametrize(
+    ("contents", "message"),
+    [
+        (b'{"version":1,"records":{}}', "Version-1 monitor state"),
+        (b'{"version":1', "Monitor state is invalid"),
+        (b'{"version":3,"records":{}}', "Monitor state is invalid"),
+        (b"privacy-canary-that-must-not-be-printed", "Monitor state is invalid"),
+    ],
+    ids=["v1", "truncated-v1", "unsupported-version", "malformed-json"],
+)
+def test_monitor_state_rejection_is_static_preserves_bytes_and_sends_no_alert(
+    monkeypatch, tmp_path, contents, message
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    webhook_calls = []
+    monkeypatch.setattr(
+        monitoring, "post_webhook", lambda *args, **kwargs: webhook_calls.append(args)
+    )
+    args, state = _command_args("monitor", tmp_path)
+    monitoring.generate_key_file(str(tmp_path / "monitor-key.json"))
+    state.write_bytes(contents)
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == cli.EXIT_MONITOR_STATE
+    assert state.read_bytes() == contents
+    assert not source_calls
+    assert not webhook_calls
+    assert message in result.output
+    _assert_private_failure(result)
+
+
+def test_monitor_absent_state_requires_explicit_initialization_before_source(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    args, state = _command_args("monitor", tmp_path)
+    monitoring.generate_key_file(str(tmp_path / "monitor-key.json"))
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == cli.EXIT_MONITOR_STATE
+    assert not state.exists()
+    assert not source_calls
+    assert "baseline is absent" in result.output
+    _assert_private_failure(result)
+
+
+def test_monitor_initialize_refuses_invalid_existing_state_before_source(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    args, state = _command_args("monitor", tmp_path)
+    args.append("--initialize")
+    monitoring.generate_key_file(str(tmp_path / "monitor-key.json"))
+    state.write_text("invalid-existing-state", encoding="utf-8")
+    before = state.read_bytes()
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == cli.EXIT_MONITOR_STATE
+    assert state.read_bytes() == before
+    assert not source_calls
+    assert "initialization refused" in result.output
+    _assert_private_failure(result)
+
+
+@pytest.mark.parametrize(
+    "failure_point",
+    ["key-load", "state-validation", "canonicalization", "fingerprinting"],
+)
+def test_injected_monitor_failures_preserve_checkpoint_and_emit_no_success_or_webhook(
+    monkeypatch, tmp_path, failure_point
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    monkeypatch.setattr(
+        detection,
+        "detect",
+        lambda text, locale=None: [
+            {"type": "EMAIL_ADDRESS", "text": "detected-value-canary"}
+        ],
+    )
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    webhook_calls = []
+    monkeypatch.setattr(
+        monitoring, "post_webhook", lambda *args, **kwargs: webhook_calls.append(args)
+    )
+    _, state, before = _prepare_valid_monitor_state(tmp_path)
+    args, _ = _command_args("monitor", tmp_path)
+
+    if failure_point == "key-load":
+        monkeypatch.setattr(
+            monitoring,
+            "load_key_file",
+            lambda path: (_ for _ in ()).throw(
+                monitoring.MonitorKeyError(PRIVACY_CANARY)
+            ),
+        )
+    elif failure_point == "state-validation":
+        monkeypatch.setattr(
+            monitoring,
+            "_validate_state",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                monitoring.MonitorStateError(PRIVACY_CANARY)
+            ),
+        )
+    elif failure_point == "canonicalization":
+        monkeypatch.setattr(
+            monitoring,
+            "canonicalize_finding",
+            lambda finding: (_ for _ in ()).throw(
+                monitoring.MonitorFingerprintError(PRIVACY_CANARY)
+            ),
+        )
+    else:
+        monkeypatch.setattr(
+            monitoring,
+            "fingerprint",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                monitoring.MonitorFingerprintError(PRIVACY_CANARY)
+            ),
+        )
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == cli.EXIT_MONITOR_STATE
+    assert state.read_bytes() == before
+    assert len(source_calls) == (0 if failure_point in {"key-load", "state-validation"} else 1)
+    assert not webhook_calls
+    assert not list(tmp_path.glob(".rlg-monitor-*.tmp"))
+    _assert_private_failure(result)
+
+
+@pytest.mark.parametrize("failure_point", ["temporary-write", "replacement"])
+def test_cli_checkpoint_write_failures_preserve_prior_and_emit_no_success_or_webhook(
+    monkeypatch, tmp_path, failure_point
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    monkeypatch.setattr(detection, "detect", lambda text, locale=None: [])
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    webhook_calls = []
+    monkeypatch.setattr(
+        monitoring, "post_webhook", lambda *args, **kwargs: webhook_calls.append(args)
+    )
+    _, state, before = _prepare_valid_monitor_state(tmp_path)
+    args, _ = _command_args("monitor", tmp_path)
+
+    if failure_point == "temporary-write":
+        def fail_write(handle, encoded):
+            handle.write(encoded[:7])
+            raise OSError(PRIVACY_CANARY)
+
+        monkeypatch.setattr(monitoring, "_write_state_bytes", fail_write)
+    else:
+        monkeypatch.setattr(
+            monitoring,
+            "_replace_state",
+            lambda *args: (_ for _ in ()).throw(OSError(PRIVACY_CANARY)),
+        )
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == cli.EXIT_MONITOR_STATE
+    assert state.read_bytes() == before
+    assert len(source_calls) == 1
+    assert not webhook_calls
+    assert not list(tmp_path.glob(".rlg-monitor-*.tmp"))
+    _assert_private_failure(result)
+
+
+def test_generate_monitor_key_cli_is_private_and_refuses_overwrite(tmp_path):
+    key_path = tmp_path / "private-key-path-canary.json"
+    args = ["generate-monitor-key", "--output", str(key_path)]
+
+    first = CliRunner().invoke(cli.app, args)
+    before = key_path.read_bytes()
+    document = json.loads(before.decode("utf-8"))
+    second = CliRunner().invoke(cli.app, args)
+
+    assert first.exit_code == 0
+    assert "Monitor key generated" in first.output
+    assert "private-key-path-canary" not in first.output
+    assert document["key"] not in first.output
+    assert second.exit_code == cli.EXIT_MONITOR_STATE
+    assert "private-key-path-canary" not in second.output
+    assert document["key"] not in second.output
+    assert key_path.read_bytes() == before

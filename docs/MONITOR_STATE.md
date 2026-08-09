@@ -1,0 +1,138 @@
+# Monitor key and state contract
+
+This document describes the implemented version-2 local monitor checkpoint. RAGLeakGuard remains an alpha, best-effort data-at-rest scanner. A successful monitor run is not proof of detector completeness, connector completeness, production safety, or compliance.
+
+## Operator workflow
+
+Every monitor run requires an explicit operator-provided key file. There is no default key, public-metadata derivation, fallback key, unkeyed mode, Control Plane, vault, or KMS integration.
+
+Generate a new key without overwriting any existing path:
+
+```bash
+ragleakguard generate-monitor-key --output /etc/ragleakguard/monitor-key.json
+```
+
+On POSIX, the helper creates the file with mode `0600`, and the loader rejects group- or other-accessible key files. On Windows, Python's portable file-mode API cannot prove a restrictive DACL; use Windows ACL tooling to limit the key file to the scheduled-task identity and administrators before relying on it. The loader rejects missing, non-regular, unreadable, oversized, malformed, weak-length, wrong-purpose, wrong-construction, and incompatible files with a static exit-4 failure.
+
+Explicitly initialize a new baseline:
+
+```bash
+ragleakguard monitor --source chroma --path ./sample_store --locale au \
+  --key-file /etc/ragleakguard/monitor-key.json \
+  --state /var/lib/ragleakguard/monitor-v2.json --initialize
+```
+
+Initialization uses same-directory atomic creation and never overwrites an existing valid, invalid, legacy, symlink, or otherwise occupied state path. An absent state without `--initialize` exits 4 before reading the source. This prevents deletion or loss of a checkpoint from looking like an ordinary no-change run. A successful initialization says `baseline initialized`; it does not say `no change detected`.
+
+Subsequent scheduled runs omit `--initialize` but must provide the same key file, source value, and store-path spelling:
+
+```bash
+ragleakguard monitor --source chroma --path ./sample_store --locale au \
+  --key-file /etc/ragleakguard/monitor-key.json \
+  --state /var/lib/ragleakguard/monitor-v2.json
+```
+
+Scheduled-job secret injection is therefore a local filesystem-permission concern. Give the job identity read access to the key and read/write access to the state directory; do not place key bytes in command-line arguments, environment-variable dumps, logs, unit files, cron output, or repository files.
+
+## Key file and lifecycle
+
+The strict key-file allowlist is `version`, `purpose`, `construction`, `key_id`, and `key`:
+
+| Field | Required value |
+|---|---|
+| `version` | Integer `1` (booleans rejected). |
+| `purpose` | `ragleakguard.monitor`. |
+| `construction` | `RLG-MONITOR-HMAC-SHA256-v1`. |
+| `key_id` | Random non-secret 128-bit identifier encoded as 32 lowercase hex characters. |
+| `key` | Exactly 256 bits encoded as strict Base64. The helper obtains the bytes from Python's `secrets` CSPRNG. |
+
+The key is held in process memory while a monitor run executes. It is never written to state, reports, console output, webhook payloads, exceptions, or caches by this implementation. Key-file entropy cannot be inferred from its bytes after creation; use the generation helper rather than manually constructing material.
+
+- **Backup and recovery:** back up the key and state through separately access-controlled, tested recovery procedures. Losing the key makes the authenticated state unusable; restore the original key rather than treating the state as empty.
+- **Rotation:** do not replace a key file in place for an existing state. A changed key ID fails before scanning. Different material with a reused ID fails state authentication. The implementation never silently rotates, converts, or rewrites state.
+- **Re-baseline:** to rotate deliberately, preserve the old key and state according to retention policy, generate a new key, choose a new state path, and use `--initialize`. The new baseline has no cross-key comparison history, so changes between old and new baselines are not detectable by that new state.
+- **Retirement and compromise:** retire the old scheduled-job reference only after the new baseline is deliberately accepted. A compromised key permits token correlation and state forgery within that key scope; rotate to a new key and state path and investigate affected outputs.
+
+Tokens for identical input are unlinkable across independently generated keys under the HMAC assumption. Within one key, record tokens are also bound to the exact source/store scope. Reusing a key across installations or copying a key/state pair expands the correlation domain and is not recommended.
+
+## Finding identity and cryptographic construction
+
+Finding identity is exactly:
+
+1. the finding `type`; and
+2. the exact detected `text` value returned by the detector.
+
+Both attributes are required and validated. Type identifiers use the detector's uppercase ASCII identifier form. Values are encoded as strict UTF-8 without Unicode normalization, so precomposed and decomposed code-point sequences remain distinct. Lone surrogates, missing/empty values, and malformed types fail closed. Confidence score, span position, dictionary insertion order, process order, locale-formatted alternatives, and source finding order do not participate. Consequently, score-only or position-only movement is deliberately not a finding-value change.
+
+Every field uses typed length framing:
+
+```text
+uint32_be(label_length) || label || uint64_be(value_length) || value
+```
+
+This makes delimiter-like values and alternate field splits unambiguous. Findings are a multiset: finding tokens are sorted before aggregation, so reordering is stable, while repeated tokens preserve duplicate multiplicity.
+
+The construction derives separate HMAC-SHA-256 subkeys from the 256-bit master key for these labelled purposes:
+
+| Purpose | Use |
+|---|---|
+| `finding-token` | Exact type/value finding identity. |
+| `aggregate-finding-fingerprint` | Sorted repeated finding-token multiset for one record. |
+| `record-correlation-token` | Store-bound collection/record correlation. |
+| `store-scope-binding` | Exact source and store-path argument binding. |
+| `persisted-state-authentication` | Canonical version-2 state body authentication. |
+
+Each derivation and operation also frames the public construction identifier and purpose. All tokens, fingerprints, and authenticators retain the full 256-bit HMAC output (64 lowercase hex characters); none is truncated or reused without a label.
+
+For two distinct inputs under an uncompromised key, the idealized probability of an accidental specific-pair 256-bit output collision is `2^-256`. Across `q` independently distributed outputs, the birthday-bound approximation is `q(q-1) / 2^257`; this is non-zero and does not make collisions impossible. An injected same-run finding-token collision between distinct identities fails closed. A token collision occurring only across separate runs cannot be distinguished without persisting raw identity and remains a residual false-negative risk; tests force and document both behaviors.
+
+## Version-2 state schema
+
+The JSON root has this complete allowlist; unknown or duplicate members are rejected:
+
+| Field | Contract |
+|---|---|
+| `version` | Exact integer `2`; booleans rejected. |
+| `construction` | Exact `RLG-MONITOR-HMAC-SHA256-v1`. |
+| `key_id` | 32 lowercase hex characters matching the loaded key. |
+| `scope_token` | Full 64-hex keyed store-scope token. |
+| `totals` | Exact object with bounded integer `records` and `findings`, consistent with `records`. |
+| `records` | Object keyed only by full 64-hex record tokens. |
+| `authentication` | Full 64-hex state-body authenticator from the separate state-authentication key. |
+
+Each record value has exactly `finding_count` (integer `0..1,000,000`) and `fingerprint` (64 lowercase hex characters). The state permits at most 1,000,000 records, at most 1,000,000 findings per record, at most `10^12` total findings, and at most 64 MiB of UTF-8 JSON. A zero count must carry the keyed empty-multiset fingerprint; a positive count must not. Totals must equal the record map and summed counts.
+
+The state intentionally omits scan time, source, raw store/state path, document text, detected values, spans, finding types, exception text, collection/tenant names, record IDs, metadata, key material, and reversible identifiers. Finding types remain ephemeral only because the current console/webhook interface still reports them; webhook minimisation and signing are separate work packages.
+
+The authenticator covers canonical JSON for every field except `authentication`, with sorted object keys, no insignificant whitespace, and ASCII JSON escaping. Schema, construction, key ID, scope, numeric consistency, digest formats, and authentication are all validated before source access, diffing, writing, success output, or webhook delivery.
+
+Checkpoint updates write and fsync a permission-restricted temporary file in the target directory, then call atomic replacement. Temporary-write and replacement failures remove the temporary file when possible, preserve the prior checkpoint byte-for-byte in tested paths, exit 4, and emit no success or webhook. Abrupt power loss and filesystem durability beyond the file fsync/atomic namespace operation remain dependent on the host filesystem.
+
+## Compatibility and failure matrix
+
+| Condition | Implemented behavior | Operator action |
+|---|---|---|
+| State absent, no `--initialize` | Exit 4 before source access; no state or webhook. | Investigate loss/deletion, then explicitly initialize only if a new baseline is intended. |
+| State absent with `--initialize` | Atomic no-overwrite version-2 creation; distinct initialization message. | Preserve key and state together for recovery. |
+| Any state path already exists with `--initialize` | Exit 4 without parsing or overwriting it. | Preserve it or choose a new state path. |
+| Valid version-1 state | Exit 4 with static legacy remediation; bytes unchanged. | Preserve the legacy file and explicitly initialize version 2 at a new path. |
+| Malformed/truncated/inconsistent v1-like JSON | Static invalid-state exit 4; bytes unchanged. | Restore a known-good file or initialize a separate new path. |
+| Unsupported version | Static invalid-state exit 4; bytes unchanged. | Use compatible software or a separately initialized state path. |
+| Missing/malformed/wrong-purpose/weak-length key | Static key exit 4 before source access. | Restore or generate an appropriate key file. |
+| Changed key ID/construction/store scope | Static mismatch exit 4; state unchanged. | Restore the matching key/arguments or explicitly re-baseline at a new path. |
+| Same key ID but different key bytes | Authentication failure; state unchanged. | Restore the original key. Never reuse key IDs. |
+| Corruption, tampering, unknown fields, invalid digests, inconsistent counts, or authentication failure | Static state exit 4; no write, success, or webhook. | Restore a known-good backup or explicitly initialize a new path. |
+
+Version 1 stored only aggregate type/count fingerprints, raw store paths, and raw collection/record keys. It lacks finding-value history, so this implementation rejects it rather than claiming a lossless migration, silently treating it as empty, or rewriting it. There is no automatic in-place migration or rotation.
+
+The importable monitor functions changed incompatibly: fingerprint/snapshot/state operations now require validated key/scope objects and version-2 field names. RAGLeakGuard has no separately versioned stable SDK contract. CLI jobs must add `--key-file`; first-run jobs must also add one deliberate `--initialize` invocation. Exit 4 is new for monitor key/state/checkpoint failures.
+
+## Residual risks and non-claims
+
+- Detector false negatives, overlap decisions, and finding-text instability can still produce missed or noisy monitor changes.
+- Exact store-path spelling is part of scope; changing relative/absolute spelling fails as a mismatch even if it reaches the same store.
+- Key compromise, insecure backup, key reuse, overlapping scheduled jobs, and local process compromise remain operator/system risks. Concurrent state writers are not a supported coordination mechanism.
+- HMAC tokens are non-reversible without the key under the stated assumption, but low-entropy identifiers may be guessed after key compromise.
+- The Chroma connector still lacks pagination, resource bounds, concurrent-mutation detection, and scan-completeness evidence.
+- The current webhook still includes source/store path, type/count metadata, and correlation tokens; it is unsigned and lacks durable delivery. This package does not prove webhook confidentiality, authenticity, minimisation, or delivery.
+- Local tests do not prove every filesystem, Windows ACL, Python version, platform, dependency version, or adversarial resource-exhaustion case.
