@@ -68,18 +68,25 @@ ragleakguard scan --source chroma --path ./sample_store --locale au --report rep
 One scan tells you where you stand today; `monitor` tells you when it changes:
 
 ```bash
-# First run writes a baseline (fingerprints only — never your data)
-ragleakguard monitor --source chroma --path ./sample_store --locale au --state rlg-state.json
+# Generate a local 256-bit monitor key; this never overwrites an existing path
+ragleakguard generate-monitor-key --output rlg-monitor-key.json
+
+# Explicitly authorize creation of a new authenticated version-2 baseline
+ragleakguard monitor --source chroma --path ./sample_store --locale au \
+  --key-file rlg-monitor-key.json --state rlg-state.json --initialize
 
 # Later runs diff against the baseline and alert on NEW or CHANGED findings
-ragleakguard monitor --source chroma --path ./sample_store --locale au --state rlg-state.json \
+ragleakguard monitor --source chroma --path ./sample_store --locale au \
+  --key-file rlg-monitor-key.json --state rlg-state.json \
   --webhook https://hooks.example.com/your-alert   # Slack / Discord / Zapier / n8n
 
 # Cron it (hourly): exit code 1 = new exposure detected
-0 * * * *  ragleakguard monitor --source chroma --path /srv/store --state /var/lib/rlg/state.json --webhook $HOOK
+0 * * * *  ragleakguard monitor --source chroma --path /srv/store --key-file /etc/rlg/monitor-key.json --state /var/lib/rlg/state.json --webhook $HOOK
 ```
 
-The state file and webhook payloads contain **record ids, finding types, and counts only** — no document text, no detected values, ever.
+The authenticated state contains full-length keyed scope/record tokens and finding-level fingerprints plus validation counts—no raw path, collection name, record ID, document text, detected value, span, or key material. Version-1 state is rejected without modification because it lacks finding-value history. Missing, invalid, mismatched, or unauthenticated key/state material exits 4 before diffing, success output, or a webhook. Baseline creation requires `--initialize` and never overwrites an existing path.
+
+The current webhook remains a separate known limitation: it still contains the source/store path, finding type/count metadata, and keyed record tokens, and it is unsigned with no durable delivery. See the [monitor key and state contract](docs/MONITOR_STATE.md) for key permissions, backup/recovery, rotation, scheduled jobs, version-1 handling, schema, construction, and residual risks.
 
 ## Detection
 

@@ -22,4 +22,8 @@ chroma_db/
 scratch/
 sample_store/
 report.md
+.rlg-monitor-key.json
+rlg-monitor-key.json
+.rlg-state.json
+rlg-state.json
 .DS_Store
