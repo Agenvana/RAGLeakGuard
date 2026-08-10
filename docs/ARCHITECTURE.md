@@ -1,6 +1,6 @@
 # Architecture
 
-**Baseline:** implemented runtime behavior independently inspected at Git commit `2b63a04e0691a7d82a1bb0ad5f6a765d0f7fbbbe` on 2026-08-10. This is an alpha architecture description, not a stability or production-readiness guarantee.
+**Baseline context:** this document describes source behavior implemented after `2eddf45e5ff4b66351c2660bb85a34f0107cbd9d` for Issue #10. Independent security review of the exact implementation commit is required before merge. This is an alpha architecture description, not a stability or production-readiness guarantee.
 
 ## Implemented now
 
@@ -20,7 +20,9 @@ flowchart LR
     D --> F["Keyed monitor snapshot"]
     I["Operator monitor key file"] --> F
     F --> G["Authenticated local JSON state v2"]
-    F --> H["Optional webhook"]
+    J["Dedicated webhook secret"] --> H["Signed fixed alert"]
+    F --> H
+    H --> K["HTTPS verifying receiver"]
 ```
 
 ### Connector
@@ -57,11 +59,15 @@ The strict version-2 JSON checkpoint persists only the construction/key identifi
 
 Version-1 state is rejected without rewrite because aggregate type/count data cannot be losslessly converted to finding-value history. New baseline creation uses same-directory atomic no-overwrite installation; updates write/fsync a same-directory temporary file and call atomic replacement. Tested temporary-write/replacement failures preserve the prior checkpoint and emit no success/webhook. See the complete [monitor key and state contract](MONITOR_STATE.md) for schema, cryptography, lifecycle, rotation, recovery, compatibility, and limits.
 
-Webhook payloads still contain timestamp, source/path, aggregate totals, keyed record tokens, and type counts. Delivery remains one synchronous unsigned POST with no durable outbox, retry policy, or idempotency key. Webhook minimisation/signing and durable delivery are **planned** separate packages.
+The optional webhook uses a separate, strict 256-bit operator secret and emits only the fixed 60-byte version-1 body `{"event":"ragleakguard.monitor.exposure-change","version":1}`. The sender signs the exact method, normalized authority, origin-form request target, allowlisted HTTP/1.1 headers, timestamp, nonce, and immutable body using the public `RLG-WEBHOOK-HMAC-SHA256-v1` framing. The request builder receives no source, snapshot, delta list, record token, finding type/count, monitor key, state path, or exception object.
+
+Webhook preflight validates the HTTPS URL and dedicated secret before connector access. Alert construction and signing precede checkpoint replacement; the single network attempt follows a successful checkpoint. A raw TLS socket emits exactly the nine protocol headers, never follows redirects, performs ordinary certificate-chain/hostname verification, and applies one 10-second monotonic deadline across DNS, connection, TLS handshake, request writes, and response headers. It reads response headers one byte at a time through the terminator so response-body bytes are not consumed, then accepts only `200..299`.
+
+The public [webhook protocol](WEBHOOK_PROTOCOL.md) includes the test vector and a receiver verifier contract. The included helper authenticates first, applies the inclusive 300-second freshness window, and atomically records `(key_id, nonce)` in a process-local cache. HMAC is authenticity/integrity, not confidentiality or replay prevention by itself. Delivery remains non-durable: there is no outbox, retry/backoff, idempotency guarantee, dead-letter state, crash recovery, or multi-destination routing.
 
 ### CLI and failure behavior
 
-[cli.py](../src/ragleakguard/cli.py) provides Typer commands and writes operator messages to the console. Unsupported sources, missing required Chroma paths, and malformed or unsupported locales exit 2. If detection dependencies or the required spaCy model cannot be loaded and runtime initialization cannot complete, the commands exit 3. Monitor key/state, compatibility, fingerprint, and checkpoint failures exit 4 with static remediation. Locale/detection preflight and monitor key/state authentication complete before source access. A relevant failure does not update state, report monitor success/no-change, or send a webhook.
+[cli.py](../src/ragleakguard/cli.py) provides Typer commands and writes operator messages to the console. Unsupported sources, missing required Chroma paths, malformed or unsupported locales, and an orphan `--webhook-secret-file` exit 2. If detection dependencies or the required spaCy model cannot load, commands exit 3. Monitor key/state, compatibility, fingerprint, and checkpoint failures exit 4. Webhook configuration, secret loading, preparation, transport, redirect, and response failures exit 5 with static messages. Locale/detection and webhook preflight, followed by monitor key/state authentication, complete before source access. Unsigned webhook configuration is rejected. Only an accepted `2xx` prints `Webhook alert delivered.`
 
 ## Trust boundaries
 
@@ -69,13 +75,14 @@ Webhook payloads still contain timestamp, source/path, aggregate totals, keyed r
 - The local process temporarily handles raw document text and detected values.
 - The report path and monitor state are local persistent outputs controlled by the operator.
 - The operator monitor key file is a local secret input; its permissions, backup, recovery, rotation, retirement, and scheduled-job access are operator trust boundaries.
-- A webhook crosses the local trust boundary and can disclose the current metadata fields to its receiver.
+- The dedicated webhook secret is a distinct local secret input shared separately with a verifying receiver; it must never be derived from or substituted for the monitor key.
+- The HTTPS receiver, TLS endpoint, receiver clock, key-ID mapping, atomic nonce cache, logs, and downstream adapters are separate trust boundaries. The fixed event discloses only that an exposure change occurred, while the endpoint remains observable to network infrastructure.
 - Package indexes, dependency downloads, the spaCy model download, and source-control/release systems are supply-chain boundaries.
 
 See the [threat model](THREAT_MODEL.md) for assets, abuse cases, and residual risks.
 
 ## Planned, not implemented
 
-The public [roadmap](../ROADMAP.md) tracks possible additional locales, connectors, file scanning, integrations, HTML/compliance reporting, and future Prevent/Fix and Prove stages. Remaining Phase 0 hardening plans include bounded connectors, webhook minimisation/signing, durable alert delivery, packaged demos, and reproducible releases.
+The public [roadmap](../ROADMAP.md) tracks possible additional locales, connectors, file scanning, integrations, HTML/compliance reporting, and future Prevent/Fix and Prove stages. Remaining Phase 0 hardening plans include bounded connectors, durable alert delivery, packaged demos, and reproducible releases.
 
 No Prevent/Fix vault, erasure mechanism, signed proof, multi-tenant Control Plane, certification, or hosted service is implemented in this repository.

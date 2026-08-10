@@ -71,22 +71,31 @@ ragleakguard scan --source chroma --path ./sample_store --locale au --report rep
 # 產生本機 256-bit 監控金鑰；絕不覆寫既有路徑
 ragleakguard generate-monitor-key --output rlg-monitor-key.json
 
+# 產生另一把專用的 256-bit webhook 簽署密鑰；透過受控管的獨立管道
+# 提供給驗證端，絕不可重用監控金鑰
+ragleakguard generate-webhook-secret --output rlg-webhook-secret.json
+
 # 明確授權建立新的、已驗證的 version-2 基準線
 ragleakguard monitor --source chroma --path ./sample_store --locale au \
   --key-file rlg-monitor-key.json --state rlg-state.json --initialize
 
-# 之後的執行會與基準線比對，對「新增」或「變更」的發現發出警報
+# 之後的執行會與基準線比對，對「新增」或「變更」的暴露發出最小化且已簽署的警報；
+# 接收端必須驗證 RAGLeakGuard webhook 協定
 ragleakguard monitor --source chroma --path ./sample_store --locale au \
   --key-file rlg-monitor-key.json --state rlg-state.json \
-  --webhook https://hooks.example.com/your-alert   # Slack / Discord / Zapier / n8n
+  --webhook https://receiver.example.com/rlg \
+  --webhook-secret-file rlg-webhook-secret.json
 
-# 排入 cron（每小時）：exit code 1 = 偵測到新的暴露
-0 * * * *  ragleakguard monitor --source chroma --path /srv/store --key-file /etc/rlg/monitor-key.json --state /var/lib/rlg/state.json --webhook $HOOK
+# 排入 cron（每小時）：exit 1 = 偵測到暴露且收到可接受的 2xx；exit 5 =
+# webhook 設定、建構、傳輸、重新導向或回應失敗
+0 * * * *  ragleakguard monitor --source chroma --path /srv/store --key-file /etc/rlg/monitor-key.json --state /var/lib/rlg/state.json --webhook https://receiver.example.com/rlg --webhook-secret-file /etc/rlg/webhook-secret.json
 ```
 
 已驗證的狀態檔只包含完整長度、以金鑰產生的範圍／紀錄 token、發現層級指紋與驗證計數；不包含原始路徑、collection 名稱、紀錄 ID、文件文字、偵測值、span 或金鑰材料。Version 1 因缺少發現值歷史而會在不修改檔案的情況下被拒絕。缺少、無效、不相符或未通過驗證的金鑰／狀態會以 exit code 4 結束，且不進行 diff、不輸出成功訊息、不傳送 webhook。建立基準線必須使用 `--initialize`，且不會覆寫既有路徑。
 
-目前 webhook 仍是另一項已知限制：內容仍包含來源／store 路徑、發現類型／數量中繼資料與 keyed record token，且未簽署、沒有 durable delivery。金鑰權限、備份／復原、輪替、排程工作、version-1 處理、schema、密碼學建構與殘餘風險，請見[監控金鑰與狀態契約](docs/MONITOR_STATE.md)（英文）。
+Webhook 的 version-1 本體固定為同一個 60-byte 暴露變更事件，不含來源／store 路徑、record token、發現類型／數量、文件資料或安裝識別碼。精確 URL target、本體與允許的 HTTP/1.1 headers 會以專用密鑰簽署；HTTPS 憑證鏈與主機名稱驗證不可停用、絕不跟隨重新導向，且 DNS、連線、TLS、傳送與回應 headers 共用一個 10 秒 monotonic deadline。未提供 `--webhook-secret-file` 的舊式 unsigned `--webhook` 會刻意被拒絕。Slack／Discord incoming webhook 不相容；Zapier、n8n 或其他下游服務必須先經過能驗證此協定的 receiver／gateway。
+
+Webhook delivery 仍不具 durable 保證。程式會先推進 checkpoint，再進行唯一一次網路傳送；因此傳輸失敗會以 exit 5 結束，但下一次執行可能無法重建該警報。傳送或回應失敗也無法證明接收端未接受該請求。本工作套件沒有 retry、outbox、dead-letter，亦不保證 exactly-once 或 at-least-once。`2xx` 只表示收到符合契約的回應 headers，不證明下游處理完成。驗證、replay cache、密鑰生命週期、相容性與殘餘風險請見 [webhook 協定](docs/WEBHOOK_PROTOCOL.md)與[監控金鑰與狀態契約](docs/MONITOR_STATE.md)（英文）。
 
 ## 偵測能力
 
