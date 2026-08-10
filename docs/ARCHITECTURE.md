@@ -1,6 +1,6 @@
 # Architecture
 
-**Baseline context:** this document describes source behavior implemented after `2eddf45e5ff4b66351c2660bb85a34f0107cbd9d` for Issue #10. Independent security review of the exact implementation commit is required before merge. This is an alpha architecture description, not a stability or production-readiness guarantee.
+**Baseline:** implemented runtime behavior independently inspected at Git commit `d33dba52e04923d5e4912d4637ce84d19dd8884f` on 2026-08-10. This is an alpha architecture description, not a stability or production-readiness guarantee.
 
 ## Implemented now
 
