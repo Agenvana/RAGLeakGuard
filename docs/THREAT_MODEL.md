@@ -1,6 +1,6 @@
 # Threat model
 
-**Baseline:** this revision describes the current source tree and executable tests. The monitor implementation still requires independent review on the exact final commit before merge. RAGLeakGuard is an alpha data-inventory scanner, not a prevention, erasure, or compliance system.
+**Baseline:** implemented runtime behavior independently inspected at `2b63a04e0691a7d82a1bb0ad5f6a765d0f7fbbbe` on 2026-08-10. RAGLeakGuard is an alpha data-inventory scanner, not a prevention, erasure, or compliance system.
 
 ## Scope
 

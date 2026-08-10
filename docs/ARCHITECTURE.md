@@ -1,6 +1,6 @@
 # Architecture
 
-**Baseline:** this revision describes the current source tree and executable tests. The monitor implementation is security-critical and still requires independent review on the exact final commit before merge. This is an alpha architecture description, not a stability or production-readiness guarantee.
+**Baseline:** implemented runtime behavior independently inspected at Git commit `2b63a04e0691a7d82a1bb0ad5f6a765d0f7fbbbe` on 2026-08-10. This is an alpha architecture description, not a stability or production-readiness guarantee.
 
 ## Implemented now
 
