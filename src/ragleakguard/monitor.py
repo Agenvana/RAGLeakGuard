@@ -1,24 +1,31 @@
-"""Privacy-safe keyed monitoring state and the existing webhook transport.
+"""Privacy-safe monitor state and authenticated minimal webhook alerts.
 
 Version-2 state contains only purpose-bound keyed tokens, finding counts,
 validation totals, public construction/key identifiers, and an authenticator.
-Raw store metadata and detector values stay process-local. Webhook minimisation,
-signing, and delivery policy are separate work packages and are not changed here.
+Webhook alerts use a separate operator secret, a fixed 60-byte body, an exact
+HTTP/1.1 header allowlist, and one monotonic-deadline HTTPS request.
 """
 import base64
 import binascii
 import hashlib
 import hmac
+import ipaddress
 import json
+import math
 import os
+import queue
 import re
 import secrets
+import socket
+import ssl
 import stat
 import tempfile
-import urllib.request
+import threading
+import time
+import urllib.parse
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
+from types import MappingProxyType
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 
 STATE_VERSION = 2
@@ -36,9 +43,42 @@ MAX_RECORDS = 1_000_000
 MAX_FINDINGS_PER_RECORD = 1_000_000
 MAX_TOTAL_FINDINGS = MAX_RECORDS * MAX_FINDINGS_PER_RECORD
 
+WEBHOOK_SECRET_FILE_VERSION = 1
+WEBHOOK_SECRET_PURPOSE = "ragleakguard.webhook-signing"
+WEBHOOK_CONSTRUCTION_ID = "RLG-WEBHOOK-HMAC-SHA256-v1"
+WEBHOOK_SECRET_BYTES = 32
+MAX_WEBHOOK_SECRET_FILE_BYTES = 4096
+MAX_WEBHOOK_URL_BYTES = 2048
+MAX_WEBHOOK_RESPONSE_HEADER_BYTES = 64 * 1024
+WEBHOOK_DEADLINE_SECONDS = 10.0
+WEBHOOK_FRESHNESS_SECONDS = 300
+WEBHOOK_METHOD = "POST"
+WEBHOOK_CONTENT_TYPE = "application/json"
+WEBHOOK_USER_AGENT = "RAGLeakGuard-Webhook/1"
+WEBHOOK_VERSION = "1"
+WEBHOOK_BODY_BYTES = (
+    b'{"event":"ragleakguard.monitor.exposure-change","version":1}'
+)
+WEBHOOK_HEADER_ORDER = (
+    "Host",
+    "Content-Length",
+    "Content-Type",
+    "User-Agent",
+    "X-RAGLeakGuard-Webhook-Version",
+    "X-RAGLeakGuard-Key-Id",
+    "X-RAGLeakGuard-Timestamp",
+    "X-RAGLeakGuard-Nonce",
+    "X-RAGLeakGuard-Signature",
+)
+WEBHOOK_HEADER_ALLOWLIST = frozenset(WEBHOOK_HEADER_ORDER)
+
 _HEX_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _KEY_ID = re.compile(r"^[0-9a-f]{32}$")
 _ENTITY_TYPE = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
+_WEBHOOK_SIGNATURE = re.compile(r"^v1=[0-9a-f]{64}$")
+_WEBHOOK_TIMESTAMP = re.compile(r"^(?:0|[1-9][0-9]*)$")
+_HTTP_TOKEN = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+_VALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 
 _PURPOSE_FINDING = b"finding-token"
 _PURPOSE_AGGREGATE = b"aggregate-finding-fingerprint"
@@ -92,6 +132,30 @@ class MonitorInitializationError(MonitorError):
 
 class MonitorBaselineRequiredError(MonitorError):
     """No checkpoint exists and explicit initialization was not authorized."""
+
+
+class WebhookError(MonitorError):
+    """Base class for privacy-safe webhook failures."""
+
+
+class WebhookConfigurationError(WebhookError):
+    """The webhook URL or option configuration is invalid."""
+
+
+class WebhookSecretError(WebhookError):
+    """The dedicated webhook secret could not be generated or loaded."""
+
+
+class WebhookPreparationError(WebhookError):
+    """The fixed alert could not be constructed and signed."""
+
+
+class WebhookTransportError(WebhookError):
+    """The one permitted HTTPS request did not complete successfully."""
+
+
+class WebhookVerificationError(WebhookError):
+    """A received webhook request did not satisfy the version-1 contract."""
 
 
 class _DuplicateJsonKey(ValueError):
@@ -163,6 +227,51 @@ class MonitorKey:
 
     key_id: str
     _material: bytes = field(repr=False)
+
+
+@dataclass(frozen=True)
+class WebhookSecret:
+    """Validated dedicated signing secret; repr excludes all identifying data."""
+
+    key_id: str = field(repr=False)
+    _material: bytes = field(repr=False)
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.key_id, str)
+            or not _KEY_ID.fullmatch(self.key_id)
+            or not isinstance(self._material, bytes)
+            or len(self._material) != WEBHOOK_SECRET_BYTES
+        ):
+            raise WebhookSecretError("Webhook signing secret is invalid.")
+
+    def __repr__(self) -> str:
+        return "WebhookSecret(<redacted>)"
+
+
+@dataclass(frozen=True)
+class WebhookTarget:
+    """Validated HTTPS destination; repr hides endpoint and authority data."""
+
+    host: str = field(repr=False)
+    port: int = field(repr=False)
+    authority: str = field(repr=False)
+    request_target: str = field(repr=False)
+
+    def __repr__(self) -> str:
+        return "WebhookTarget(<redacted>)"
+
+
+@dataclass(frozen=True)
+class PreparedWebhook:
+    """Immutable signed request components ready for exactly one transport call."""
+
+    target: WebhookTarget = field(repr=False)
+    body: bytes = field(repr=False)
+    headers: Mapping[str, str] = field(repr=False)
+
+    def __repr__(self) -> str:
+        return "PreparedWebhook(<redacted>)"
 
 
 class MonitorCrypto:
@@ -289,10 +398,15 @@ def _read_regular_file(path: str, maximum: int, *, private: bool) -> bytes:
         flags |= os.O_NOFOLLOW
     fd = None
     try:
+        path_stat = os.lstat(path)
+        if stat.S_ISLNK(path_stat.st_mode) or not stat.S_ISREG(path_stat.st_mode):
+            raise OSError("not a regular non-symlink file")
         fd = os.open(path, flags)
         file_stat = os.fstat(fd)
         if not stat.S_ISREG(file_stat.st_mode):
             raise OSError("not a regular file")
+        if (path_stat.st_dev, path_stat.st_ino) != (file_stat.st_dev, file_stat.st_ino):
+            raise OSError("file changed during open")
         if private and os.name != "nt" and file_stat.st_mode & 0o077:
             raise OSError("permissions are too broad")
         with os.fdopen(fd, "rb") as handle:
@@ -727,52 +841,723 @@ def save_state(
                     pass
 
 
-def build_webhook_payload(
-    delta: Dict[str, List[str]],
-    current: Dict[str, Dict[str, Any]],
-    source: str,
-    store_path: str,
-) -> Dict[str, Any]:
-    """Existing alert contract, now keyed by non-reversible record tokens.
+def generate_webhook_secret_file(path: str) -> str:
+    """Create a dedicated 256-bit webhook secret without overwriting a path."""
+    if not isinstance(path, str) or not path:
+        raise WebhookSecretError("Webhook signing secret path is invalid.")
+    fd = None
+    created = False
+    try:
+        secret = WebhookSecret(
+            secrets.token_hex(KEY_ID_HEX_LENGTH // 2),
+            secrets.token_bytes(WEBHOOK_SECRET_BYTES),
+        )
+        document = {
+            "construction": WEBHOOK_CONSTRUCTION_ID,
+            "key_id": secret.key_id,
+            "purpose": WEBHOOK_SECRET_PURPOSE,
+            "secret": base64.b64encode(secret._material).decode("ascii"),
+            "version": WEBHOOK_SECRET_FILE_VERSION,
+        }
+        encoded = (
+            json.dumps(document, indent=1, sort_keys=True, ensure_ascii=True) + "\n"
+        ).encode("utf-8")
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+        fd = os.open(path, flags, 0o600)
+        created = True
+        with os.fdopen(fd, "wb") as handle:
+            fd = None
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if os.name != "nt":
+            os.chmod(path, 0o600)
+        return secret.key_id
+    except Exception:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if created:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        raise WebhookSecretError(
+            "Webhook signing secret could not be generated."
+        ) from None
 
-    Source/path minimisation and payload signing remain explicitly out of scope.
-    """
 
-    def _summarize(tokens: List[str]) -> List[Dict[str, Any]]:
-        return [
+def load_webhook_secret_file(path: str) -> WebhookSecret:
+    """Strictly load a purpose-bound webhook signing secret."""
+    if not isinstance(path, str) or not path:
+        raise WebhookSecretError("Webhook signing secret path is invalid.")
+    try:
+        raw = _read_regular_file(
+            path, MAX_WEBHOOK_SECRET_FILE_BYTES, private=True
+        )
+        document = json.loads(
+            raw.decode("utf-8"), object_pairs_hook=_reject_duplicate_keys
+        )
+        if not isinstance(document, dict) or set(document) != {
+            "construction",
+            "key_id",
+            "purpose",
+            "secret",
+            "version",
+        }:
+            raise ValueError
+        if (
+            not _is_exact_int(document["version"])
+            or document["version"] != WEBHOOK_SECRET_FILE_VERSION
+            or document["purpose"] != WEBHOOK_SECRET_PURPOSE
+            or document["construction"] != WEBHOOK_CONSTRUCTION_ID
+            or not isinstance(document["key_id"], str)
+            or not _KEY_ID.fullmatch(document["key_id"])
+            or not isinstance(document["secret"], str)
+        ):
+            raise ValueError
+        encoded_secret = document["secret"].encode("ascii")
+        material = base64.b64decode(encoded_secret, validate=True)
+        if (
+            len(material) != WEBHOOK_SECRET_BYTES
+            or base64.b64encode(material) != encoded_secret
+        ):
+            raise ValueError
+        return WebhookSecret(document["key_id"], material)
+    except (
+        MonitorKeyError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        _DuplicateJsonKey,
+        UnicodeEncodeError,
+        binascii.Error,
+        ValueError,
+        TypeError,
+        RecursionError,
+        WebhookSecretError,
+    ):
+        raise WebhookSecretError(
+            "Webhook signing secret is unavailable or invalid."
+        ) from None
+
+
+def _validate_percent_escapes(value: str) -> None:
+    if _VALID_PERCENT_ESCAPE.search(value):
+        raise WebhookConfigurationError("Webhook URL is invalid.")
+
+
+def _normalize_host(host: str) -> Tuple[str, str]:
+    if not isinstance(host, str) or not host:
+        raise WebhookConfigurationError("Webhook URL is invalid.")
+    lowered = host.lower()
+    if "%" in lowered:
+        raise WebhookConfigurationError("Webhook URL is invalid.")
+    if ":" in lowered:
+        try:
+            normalized = ipaddress.IPv6Address(lowered).compressed
+        except ValueError:
+            raise WebhookConfigurationError("Webhook URL is invalid.") from None
+        return normalized, "[{}]".format(normalized)
+    if len(lowered) > 253:
+        raise WebhookConfigurationError("Webhook URL is invalid.")
+    labels_value = lowered[:-1] if lowered.endswith(".") else lowered
+    labels = labels_value.split(".")
+    if not labels or any(
+        not label
+        or len(label) > 63
+        or re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label) is None
+        for label in labels
+    ):
+        raise WebhookConfigurationError("Webhook URL is invalid.")
+    return lowered, lowered
+
+
+def validate_webhook_url(url: str) -> WebhookTarget:
+    """Validate and normalize one HTTPS URL without exposing it in errors."""
+    try:
+        if not isinstance(url, str):
+            raise ValueError
+        encoded = url.encode("ascii")
+        if not encoded or len(encoded) > MAX_WEBHOOK_URL_BYTES:
+            raise ValueError
+        if any(byte <= 0x20 or byte == 0x7F for byte in encoded):
+            raise ValueError
+        if "\\" in url or "#" in url:
+            raise ValueError
+        _validate_percent_escapes(url)
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme.lower() != "https" or not parsed.netloc:
+            raise ValueError
+        if "@" in parsed.netloc or parsed.username is not None or parsed.password is not None:
+            raise ValueError
+        if parsed.netloc.endswith(":"):
+            raise ValueError
+        if parsed.netloc.startswith("["):
+            if re.fullmatch(
+                r"\[[0-9A-Fa-f:.]+\](?::[0-9]+)?", parsed.netloc
+            ) is None:
+                raise ValueError
+        elif re.fullmatch(
+            r"[A-Za-z0-9.-]+(?::[0-9]+)?", parsed.netloc
+        ) is None:
+            raise ValueError
+        host = parsed.hostname
+        port = parsed.port
+        normalized_host, host_header = _normalize_host(host)
+        if port is None:
+            port = 443
+        if not _is_exact_int(port) or not 1 <= port <= 65535:
+            raise ValueError
+        authority = host_header if port == 443 else "{}:{}".format(host_header, port)
+        prefix_length = len(parsed.scheme) + 3 + len(parsed.netloc)
+        suffix = url[prefix_length:]
+        if suffix == "":
+            request_target = "/"
+        elif suffix.startswith("?"):
+            request_target = "/" + suffix
+        elif suffix.startswith("/"):
+            request_target = suffix
+        else:
+            raise ValueError
+        _validate_request_target(request_target)
+        return WebhookTarget(
+            host=normalized_host,
+            port=port,
+            authority=authority,
+            request_target=request_target,
+        )
+    except (UnicodeEncodeError, ValueError, WebhookConfigurationError):
+        raise WebhookConfigurationError("Webhook URL is invalid.") from None
+
+
+def _validate_request_target(request_target: str) -> None:
+    try:
+        encoded = request_target.encode("ascii")
+    except (AttributeError, UnicodeEncodeError):
+        raise WebhookConfigurationError("Webhook request target is invalid.") from None
+    if (
+        not encoded
+        or len(encoded) > MAX_WEBHOOK_URL_BYTES
+        or not request_target.startswith("/")
+        or "#" in request_target
+        or "\\" in request_target
+        or any(byte <= 0x20 or byte == 0x7F for byte in encoded)
+    ):
+        raise WebhookConfigurationError("Webhook request target is invalid.")
+    _validate_percent_escapes(request_target)
+
+
+def _validate_received_target(authority: str, request_target: str) -> None:
+    try:
+        validated = validate_webhook_url(
+            "https://{}{}".format(authority, request_target)
+        )
+    except (TypeError, WebhookConfigurationError):
+        raise WebhookVerificationError("Webhook request verification failed.") from None
+    if (
+        validated.authority != authority
+        or validated.request_target != request_target
+    ):
+        raise WebhookVerificationError("Webhook request verification failed.")
+
+
+def _target_is_consistent(target: Any) -> bool:
+    if not isinstance(target, WebhookTarget):
+        return False
+    try:
+        reconstructed = validate_webhook_url(
+            "https://{}{}".format(target.authority, target.request_target)
+        )
+    except WebhookConfigurationError:
+        return False
+    return reconstructed == target
+
+
+def build_webhook_body() -> bytes:
+    """Return the one canonical immutable 60-byte version-1 event body."""
+    try:
+        encoded = json.dumps(
             {
-                "record": token,
-                "findings": current.get(token, {}).get("finding_count", 0),
-                "types": current.get(token, {}).get("type_counts", {}),
-            }
-            for token in tokens
-        ]
-
-    totals = {
-        "records": len(current),
-        "records_with_findings": sum(
-            1 for record in current.values() if record["finding_count"] > 0
-        ),
-        "findings": sum(record["finding_count"] for record in current.values()),
-    }
-    return {
-        "event": "ragleakguard.monitor",
-        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "store": {"source": source, "path": store_path},
-        "totals": totals,
-        "new": _summarize(delta["new"]),
-        "changed": _summarize(delta["changed"]),
-        "resolved": [{"record": token} for token in delta["resolved"]],
-    }
+                "event": "ragleakguard.monitor.exposure-change",
+                "version": 1,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError):
+        raise WebhookPreparationError("Webhook alert preparation failed.") from None
+    if encoded != WEBHOOK_BODY_BYTES or len(encoded) != 60:
+        raise WebhookPreparationError("Webhook alert preparation failed.")
+    return WEBHOOK_BODY_BYTES
 
 
-def post_webhook(url: str, payload: Dict[str, Any], timeout: int = 10) -> int:
-    """POST the existing alert JSON and return its HTTP status."""
-    data = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=data,
-        headers={"Content-Type": "application/json"},
+def _webhook_frame(label: str, value: bytes) -> bytes:
+    try:
+        label_bytes = label.encode("ascii")
+    except (AttributeError, UnicodeEncodeError):
+        raise WebhookPreparationError("Webhook alert preparation failed.") from None
+    if not isinstance(value, bytes):
+        raise WebhookPreparationError("Webhook alert preparation failed.")
+    return (
+        len(label_bytes).to_bytes(4, "big")
+        + label_bytes
+        + len(value).to_bytes(8, "big")
+        + value
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
-        return response.status
+
+
+def _header_ascii(headers: Mapping[str, str], name: str) -> bytes:
+    try:
+        value = headers[name]
+        if not isinstance(value, str):
+            raise ValueError
+        return value.encode("ascii")
+    except (KeyError, UnicodeEncodeError, ValueError):
+        raise WebhookPreparationError("Webhook alert preparation failed.") from None
+
+
+def build_webhook_signing_bytes(
+    method: str,
+    authority: str,
+    request_target: str,
+    headers: Mapping[str, str],
+    body: bytes,
+) -> bytes:
+    """Frame the exact version-1 signed fields in their public order."""
+    try:
+        if method != WEBHOOK_METHOD or not isinstance(headers, Mapping):
+            raise ValueError
+        method_bytes = method.encode("ascii")
+        authority_bytes = authority.encode("ascii")
+        target_bytes = request_target.encode("ascii")
+        if headers.get("Host") != authority:
+            raise ValueError
+        values = (
+            ("construction", WEBHOOK_CONSTRUCTION_ID.encode("ascii")),
+            ("method", method_bytes),
+            ("authority", authority_bytes),
+            ("request-target", target_bytes),
+            ("content-length", _header_ascii(headers, "Content-Length")),
+            ("content-type", _header_ascii(headers, "Content-Type")),
+            ("user-agent", _header_ascii(headers, "User-Agent")),
+            (
+                "webhook-version",
+                _header_ascii(headers, "X-RAGLeakGuard-Webhook-Version"),
+            ),
+            ("key-id", _header_ascii(headers, "X-RAGLeakGuard-Key-Id")),
+            ("timestamp", _header_ascii(headers, "X-RAGLeakGuard-Timestamp")),
+            ("nonce", _header_ascii(headers, "X-RAGLeakGuard-Nonce")),
+            ("body", body),
+        )
+        return b"".join(_webhook_frame(label, value) for label, value in values)
+    except (AttributeError, UnicodeEncodeError, ValueError, WebhookPreparationError):
+        raise WebhookPreparationError("Webhook alert preparation failed.") from None
+
+
+def _sign_webhook(
+    secret: WebhookSecret,
+    target: WebhookTarget,
+    headers: Mapping[str, str],
+    body: bytes,
+) -> str:
+    if not isinstance(secret, WebhookSecret) or not isinstance(target, WebhookTarget):
+        raise WebhookPreparationError("Webhook alert preparation failed.")
+    signing_bytes = build_webhook_signing_bytes(
+        WEBHOOK_METHOD,
+        target.authority,
+        target.request_target,
+        headers,
+        body,
+    )
+    return "v1=" + hmac.new(
+        secret._material, signing_bytes, hashlib.sha256
+    ).hexdigest()
+
+
+def prepare_webhook_request(
+    alert_trigger: bool,
+    target: WebhookTarget,
+    secret: WebhookSecret,
+    *,
+    clock: Optional[Callable[[], Any]] = None,
+    nonce_source: Optional[Callable[[int], bytes]] = None,
+) -> PreparedWebhook:
+    """Build and sign the fixed alert before any checkpoint replacement."""
+    try:
+        if alert_trigger is not True:
+            raise ValueError
+        if not _target_is_consistent(target) or not isinstance(secret, WebhookSecret):
+            raise ValueError
+        clock = time.time if clock is None else clock
+        nonce_source = secrets.token_bytes if nonce_source is None else nonce_source
+        sampled = clock()
+        if isinstance(sampled, bool) or not isinstance(sampled, (int, float)):
+            raise ValueError
+        if not math.isfinite(sampled) or sampled < 0:
+            raise ValueError
+        timestamp = str(int(sampled))
+        if not _WEBHOOK_TIMESTAMP.fullmatch(timestamp):
+            raise ValueError
+        nonce_bytes = nonce_source(16)
+        if not isinstance(nonce_bytes, bytes) or len(nonce_bytes) != 16:
+            raise ValueError
+        nonce = nonce_bytes.hex()
+        body = build_webhook_body()
+        unsigned_headers = {
+            "Host": target.authority,
+            "Content-Length": str(len(body)),
+            "Content-Type": WEBHOOK_CONTENT_TYPE,
+            "User-Agent": WEBHOOK_USER_AGENT,
+            "X-RAGLeakGuard-Webhook-Version": WEBHOOK_VERSION,
+            "X-RAGLeakGuard-Key-Id": secret.key_id,
+            "X-RAGLeakGuard-Timestamp": timestamp,
+            "X-RAGLeakGuard-Nonce": nonce,
+        }
+        signature = _sign_webhook(secret, target, unsigned_headers, body)
+        headers = dict(unsigned_headers)
+        headers["X-RAGLeakGuard-Signature"] = signature
+        if tuple(headers) != WEBHOOK_HEADER_ORDER or set(headers) != WEBHOOK_HEADER_ALLOWLIST:
+            raise ValueError
+        return PreparedWebhook(
+            target=target,
+            body=body,
+            headers=MappingProxyType(headers),
+        )
+    except Exception:
+        raise WebhookPreparationError("Webhook alert preparation failed.") from None
+
+
+def _received_headers(
+    headers: Iterable[Tuple[str, str]],
+) -> Dict[str, str]:
+    try:
+        pairs = list(headers.items()) if isinstance(headers, Mapping) else list(headers)
+        result: Dict[str, str] = {}
+        for pair in pairs:
+            if not isinstance(pair, tuple) or len(pair) != 2:
+                raise ValueError
+            name, value = pair
+            if (
+                not isinstance(name, str)
+                or not isinstance(value, str)
+                or name in result
+            ):
+                raise ValueError
+            name.encode("ascii")
+            value_bytes = value.encode("ascii")
+            if any(byte < 0x20 or byte == 0x7F for byte in value_bytes):
+                raise ValueError
+            result[name] = value
+        if set(result) != WEBHOOK_HEADER_ALLOWLIST:
+            raise ValueError
+        return result
+    except (TypeError, ValueError, UnicodeEncodeError):
+        raise WebhookVerificationError(
+            "Webhook request verification failed."
+        ) from None
+
+
+class WebhookReplayCache:
+    """Process-local atomic nonce cache for the receiver helper."""
+
+    def __init__(self) -> None:
+        self._entries: Dict[Tuple[str, str], int] = {}
+        self._lock = threading.Lock()
+
+    def __repr__(self) -> str:
+        return "WebhookReplayCache(<redacted>)"
+
+    def accept(self, key_id: str, nonce: str, timestamp: int, now: int) -> bool:
+        with self._lock:
+            expired = [
+                key for key, expires_at in self._entries.items() if expires_at < now
+            ]
+            for key in expired:
+                del self._entries[key]
+            replay_key = (key_id, nonce)
+            if replay_key in self._entries:
+                return False
+            self._entries[replay_key] = timestamp + WEBHOOK_FRESHNESS_SECONDS
+            return True
+
+
+def verify_webhook_request(
+    *,
+    method: str,
+    authority: str,
+    request_target: str,
+    headers: Iterable[Tuple[str, str]],
+    body: bytes,
+    secrets_by_key_id: Mapping[str, Any],
+    receiver_now: int,
+    replay_cache: Any,
+) -> bool:
+    """Authenticate, freshness-check, and replay-check a received v1 request."""
+    try:
+        received = _received_headers(headers)
+        if method != WEBHOOK_METHOD or received["Host"] != authority:
+            raise ValueError
+        _validate_received_target(authority, request_target)
+        if body != WEBHOOK_BODY_BYTES or len(body) != 60:
+            raise ValueError
+        if (
+            received["Content-Length"] != "60"
+            or received["Content-Type"] != WEBHOOK_CONTENT_TYPE
+            or received["User-Agent"] != WEBHOOK_USER_AGENT
+            or received["X-RAGLeakGuard-Webhook-Version"] != WEBHOOK_VERSION
+        ):
+            raise ValueError
+        key_id = received["X-RAGLeakGuard-Key-Id"]
+        timestamp_text = received["X-RAGLeakGuard-Timestamp"]
+        nonce = received["X-RAGLeakGuard-Nonce"]
+        signature = received["X-RAGLeakGuard-Signature"]
+        if (
+            not _KEY_ID.fullmatch(key_id)
+            or not _WEBHOOK_TIMESTAMP.fullmatch(timestamp_text)
+            or not _KEY_ID.fullmatch(nonce)
+            or not _WEBHOOK_SIGNATURE.fullmatch(signature)
+        ):
+            raise ValueError
+        if not isinstance(secrets_by_key_id, Mapping) or key_id not in secrets_by_key_id:
+            raise ValueError
+        selected = secrets_by_key_id[key_id]
+        if isinstance(selected, WebhookSecret):
+            if selected.key_id != key_id:
+                raise ValueError
+            material = selected._material
+        else:
+            material = selected
+        if not isinstance(material, bytes) or len(material) != WEBHOOK_SECRET_BYTES:
+            raise ValueError
+        signing_bytes = build_webhook_signing_bytes(
+            method, authority, request_target, received, body
+        )
+        expected = "v1=" + hmac.new(material, signing_bytes, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError
+
+        timestamp = int(timestamp_text)
+        if not _is_exact_int(receiver_now) or receiver_now < 0:
+            raise ValueError
+        if abs(receiver_now - timestamp) > WEBHOOK_FRESHNESS_SECONDS:
+            raise ValueError
+        accept_nonce = getattr(replay_cache, "accept", None)
+        if not callable(accept_nonce):
+            raise ValueError
+        if not accept_nonce(key_id, nonce, timestamp, receiver_now):
+            raise ValueError
+        return True
+    except Exception:
+        raise WebhookVerificationError(
+            "Webhook request verification failed."
+        ) from None
+
+
+def _remaining(deadline: float, monotonic: Callable[[], float]) -> float:
+    try:
+        remaining = deadline - monotonic()
+    except Exception:
+        raise WebhookTransportError("Webhook delivery failed.") from None
+    if remaining <= 0:
+        raise WebhookTransportError("Webhook delivery failed.")
+    return remaining
+
+
+def _resolve_addresses(
+    host: str,
+    port: int,
+    deadline: float,
+    monotonic: Callable[[], float],
+) -> List[Tuple[Any, ...]]:
+    """Bound blocking platform DNS by handing it to a daemon resolver thread."""
+    results: queue.Queue = queue.Queue(maxsize=1)
+
+    def resolve() -> None:
+        try:
+            addresses = socket.getaddrinfo(
+                host,
+                port,
+                family=socket.AF_UNSPEC,
+                type=socket.SOCK_STREAM,
+                proto=socket.IPPROTO_TCP,
+            )
+        except Exception:
+            results.put((False, None))
+        else:
+            results.put((True, addresses))
+
+    thread = threading.Thread(
+        target=resolve,
+        name="rlg-webhook-dns",
+        daemon=True,
+    )
+    thread.start()
+    try:
+        ok, addresses = results.get(timeout=_remaining(deadline, monotonic))
+    except queue.Empty:
+        raise WebhookTransportError("Webhook delivery failed.") from None
+    if not ok or not addresses:
+        raise WebhookTransportError("Webhook delivery failed.")
+    return addresses
+
+
+def _connect_address(
+    addresses: Sequence[Tuple[Any, ...]],
+    deadline: float,
+    monotonic: Callable[[], float],
+) -> socket.socket:
+    for family, socktype, proto, _canonical_name, address in addresses:
+        raw = None
+        try:
+            raw = socket.socket(family, socktype, proto)
+            raw.settimeout(_remaining(deadline, monotonic))
+            raw.connect(address)
+            return raw
+        except Exception:
+            if raw is not None:
+                try:
+                    raw.close()
+                except OSError:
+                    pass
+    raise WebhookTransportError("Webhook delivery failed.")
+
+
+def _validate_prepared_request(prepared: PreparedWebhook) -> None:
+    if (
+        not isinstance(prepared, PreparedWebhook)
+        or not _target_is_consistent(prepared.target)
+        or prepared.body is not WEBHOOK_BODY_BYTES
+        or len(prepared.body) != 60
+        or not isinstance(prepared.headers, Mapping)
+        or tuple(prepared.headers) != WEBHOOK_HEADER_ORDER
+        or set(prepared.headers) != WEBHOOK_HEADER_ALLOWLIST
+        or prepared.headers["Host"] != prepared.target.authority
+        or prepared.headers["Content-Length"] != "60"
+        or prepared.headers["Content-Type"] != WEBHOOK_CONTENT_TYPE
+        or prepared.headers["User-Agent"] != WEBHOOK_USER_AGENT
+        or prepared.headers["X-RAGLeakGuard-Webhook-Version"] != WEBHOOK_VERSION
+        or not _KEY_ID.fullmatch(prepared.headers["X-RAGLeakGuard-Key-Id"])
+        or not _WEBHOOK_TIMESTAMP.fullmatch(
+            prepared.headers["X-RAGLeakGuard-Timestamp"]
+        )
+        or not _KEY_ID.fullmatch(prepared.headers["X-RAGLeakGuard-Nonce"])
+        or not _WEBHOOK_SIGNATURE.fullmatch(
+            prepared.headers["X-RAGLeakGuard-Signature"]
+        )
+    ):
+        raise WebhookTransportError("Webhook delivery failed.")
+
+
+def _request_head(prepared: PreparedWebhook) -> bytes:
+    try:
+        lines = [
+            "{} {} HTTP/1.1".format(
+                WEBHOOK_METHOD, prepared.target.request_target
+            )
+        ]
+        lines.extend(
+            "{}: {}".format(name, prepared.headers[name])
+            for name in WEBHOOK_HEADER_ORDER
+        )
+        return ("\r\n".join(lines) + "\r\n\r\n").encode("ascii")
+    except Exception:
+        raise WebhookTransportError("Webhook delivery failed.") from None
+
+
+def _read_response_headers(
+    tls_socket: ssl.SSLSocket,
+    deadline: float,
+    monotonic: Callable[[], float],
+) -> bytes:
+    response = bytearray()
+    while not response.endswith(b"\r\n\r\n"):
+        if len(response) >= MAX_WEBHOOK_RESPONSE_HEADER_BYTES:
+            raise WebhookTransportError("Webhook delivery failed.")
+        tls_socket.settimeout(_remaining(deadline, monotonic))
+        chunk = tls_socket.recv(1)
+        if not chunk:
+            raise WebhookTransportError("Webhook delivery failed.")
+        response.extend(chunk)
+    return bytes(response)
+
+
+def _response_status(raw_headers: bytes) -> int:
+    try:
+        if not raw_headers.endswith(b"\r\n\r\n"):
+            raise ValueError
+        lines = raw_headers[:-4].split(b"\r\n")
+        status_line = lines[0].decode("ascii")
+        match = re.fullmatch(r"HTTP/1\.1 ([0-9]{3})(?: [\x20-\x7e]*)?", status_line)
+        if match is None:
+            raise ValueError
+        for raw_line in lines[1:]:
+            line = raw_line.decode("ascii")
+            if line.startswith((" ", "\t")) or ":" not in line:
+                raise ValueError
+            name, value = line.split(":", 1)
+            if not _HTTP_TOKEN.fullmatch(name):
+                raise ValueError
+            value_bytes = value.encode("ascii")
+            if any(
+                byte not in (0x09,) and not 0x20 <= byte <= 0x7E
+                for byte in value_bytes
+            ):
+                raise ValueError
+        return int(match.group(1))
+    except (IndexError, UnicodeDecodeError, ValueError):
+        raise WebhookTransportError("Webhook delivery failed.") from None
+
+
+def post_webhook(prepared: PreparedWebhook) -> int:
+    """Send one HTTPS POST under one DNS-to-response-headers deadline."""
+    raw_socket = None
+    tls_socket = None
+    monotonic = time.monotonic
+    try:
+        _validate_prepared_request(prepared)
+        request_head = _request_head(prepared)
+        started = monotonic()
+        deadline = started + WEBHOOK_DEADLINE_SECONDS
+        addresses = _resolve_addresses(
+            prepared.target.host,
+            prepared.target.port,
+            deadline,
+            monotonic,
+        )
+        raw_socket = _connect_address(addresses, deadline, monotonic)
+        context = ssl.create_default_context()
+        tls_socket = context.wrap_socket(
+            raw_socket,
+            server_hostname=prepared.target.host,
+            do_handshake_on_connect=False,
+        )
+        tls_socket.settimeout(_remaining(deadline, monotonic))
+        tls_socket.do_handshake()
+        tls_socket.settimeout(_remaining(deadline, monotonic))
+        tls_socket.sendall(request_head)
+        tls_socket.settimeout(_remaining(deadline, monotonic))
+        tls_socket.sendall(prepared.body)
+        status = _response_status(
+            _read_response_headers(tls_socket, deadline, monotonic)
+        )
+        if not 200 <= status <= 299:
+            raise WebhookTransportError("Webhook delivery failed.")
+        return status
+    except WebhookTransportError:
+        raise
+    except Exception:
+        raise WebhookTransportError("Webhook delivery failed.") from None
+    finally:
+        if tls_socket is not None:
+            try:
+                tls_socket.close()
+            except OSError:
+                pass
+        if raw_socket is not None:
+            try:
+                raw_socket.close()
+            except OSError:
+                pass

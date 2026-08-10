@@ -71,22 +71,31 @@ One scan tells you where you stand today; `monitor` tells you when it changes:
 # Generate a local 256-bit monitor key; this never overwrites an existing path
 ragleakguard generate-monitor-key --output rlg-monitor-key.json
 
+# Generate a separate 256-bit webhook signing secret; share it securely with
+# the verifying receiver or gateway, never through the monitor key path
+ragleakguard generate-webhook-secret --output rlg-webhook-secret.json
+
 # Explicitly authorize creation of a new authenticated version-2 baseline
 ragleakguard monitor --source chroma --path ./sample_store --locale au \
   --key-file rlg-monitor-key.json --state rlg-state.json --initialize
 
-# Later runs diff against the baseline and alert on NEW or CHANGED findings
+# Later runs diff against the baseline and emit a signed, minimal alert on a
+# NEW or CHANGED exposure. The receiver must verify the RAGLeakGuard protocol.
 ragleakguard monitor --source chroma --path ./sample_store --locale au \
   --key-file rlg-monitor-key.json --state rlg-state.json \
-  --webhook https://hooks.example.com/your-alert   # Slack / Discord / Zapier / n8n
+  --webhook https://receiver.example.com/rlg \
+  --webhook-secret-file rlg-webhook-secret.json
 
-# Cron it (hourly): exit code 1 = new exposure detected
-0 * * * *  ragleakguard monitor --source chroma --path /srv/store --key-file /etc/rlg/monitor-key.json --state /var/lib/rlg/state.json --webhook $HOOK
+# Cron it (hourly): exit 1 = exposure and accepted 2xx delivery; exit 5 =
+# webhook configuration, preparation, transport, redirect, or response failure
+0 * * * *  ragleakguard monitor --source chroma --path /srv/store --key-file /etc/rlg/monitor-key.json --state /var/lib/rlg/state.json --webhook https://receiver.example.com/rlg --webhook-secret-file /etc/rlg/webhook-secret.json
 ```
 
 The authenticated state contains full-length keyed scope/record tokens and finding-level fingerprints plus validation counts—no raw path, collection name, record ID, document text, detected value, span, or key material. Version-1 state is rejected without modification because it lacks finding-value history. Missing, invalid, mismatched, or unauthenticated key/state material exits 4 before diffing, success output, or a webhook. Baseline creation requires `--initialize` and never overwrites an existing path.
 
-The current webhook remains a separate known limitation: it still contains the source/store path, finding type/count metadata, and keyed record tokens, and it is unsigned with no durable delivery. See the [monitor key and state contract](docs/MONITOR_STATE.md) for key permissions, backup/recovery, rotation, scheduled jobs, version-1 handling, schema, construction, and residual risks.
+The authenticated webhook body is always the same 60-byte version-1 exposure-change event. It contains no source/store path, record token, finding type/count, document data, or installation identifier. The exact URL target, body, and allowlisted HTTP/1.1 headers are signed with the dedicated secret; HTTPS certificate and hostname verification is mandatory, redirects are not followed, and one 10-second monotonic deadline covers DNS, connection, TLS, transmission, and response headers. Unsigned `--webhook` usage is intentionally rejected. Direct Slack or Discord incoming webhooks are incompatible; Zapier, n8n, or another downstream service requires a receiver/gateway that first verifies this protocol.
+
+Webhook delivery is still not durable. The checkpoint is advanced before the single network attempt, so a transport failure exits 5 but may lose that alert on the next run. A send or response failure also cannot prove that the receiver did not accept the request. There are no retries, outbox, dead-letter handling, or exactly-once/at-least-once guarantees. A `2xx` proves only that acceptable response headers arrived, not downstream processing. See the [webhook protocol](docs/WEBHOOK_PROTOCOL.md) and [monitor key and state contract](docs/MONITOR_STATE.md) for verification, replay-cache requirements, secret lifecycle, compatibility, and residual risks.
 
 ## Detection
 
