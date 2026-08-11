@@ -1,4 +1,4 @@
-"""Monitor v2 construction, state-integrity, lifecycle, and privacy tests."""
+"""Monitor v3 outbox, protocol-v2, integrity, lifecycle, and privacy tests."""
 import base64
 import copy
 import hashlib
@@ -57,8 +57,10 @@ def _snapshot(crypto, source="chroma", path="synthetic-store", items=None):
     return scope, records
 
 
-def _state_document(records, crypto, scope):
-    return json.loads(mon.serialize_state(records, crypto, scope).decode("utf-8"))
+def _state_document(records, crypto, scope, pending_alert=None):
+    return json.loads(
+        mon.serialize_state(records, crypto, scope, pending_alert).decode("utf-8")
+    )
 
 
 def _reauth(document, crypto):
@@ -294,7 +296,7 @@ def test_diff_classifies_new_changed_and_resolved_tokens():
     }
 
 
-def test_state_v2_roundtrip_is_authenticated_and_omits_ephemeral_types(tmp_path):
+def test_state_v3_roundtrip_is_authenticated_and_omits_ephemeral_types(tmp_path):
     crypto = _crypto()
     scope, records = _snapshot(crypto)
     state = tmp_path / "state.json"
@@ -303,7 +305,8 @@ def test_state_v2_roundtrip_is_authenticated_and_omits_ephemeral_types(tmp_path)
     loaded = mon.load_state(str(state), crypto, scope)
     on_disk = json.loads(state.read_text(encoding="utf-8"))
 
-    assert loaded["version"] == 2
+    assert loaded["version"] == 3
+    assert loaded["pending_alert"] is None
     assert loaded["records"] == on_disk["records"]
     assert loaded["totals"] == {"records": 1, "findings": 1}
     assert "type_counts" not in state.read_text(encoding="utf-8")
@@ -311,6 +314,7 @@ def test_state_v2_roundtrip_is_authenticated_and_omits_ephemeral_types(tmp_path)
         "authentication",
         "construction",
         "key_id",
+        "pending_alert",
         "records",
         "scope_token",
         "totals",
@@ -364,6 +368,44 @@ def test_serialized_state_recursive_privacy_canaries(tmp_path):
         assert canary not in serialized
         assert all(canary not in value for value in serialized_strings)
     assert base64.b64encode(material).decode("ascii") not in serialized
+
+
+def test_pending_alert_state_is_privacy_minimal_and_contains_no_attempt_bytes(tmp_path):
+    crypto = _crypto()
+    scope, records = _snapshot(crypto)
+    pending = mon.new_pending_alert(
+        clock=lambda: 2_000_000_000,
+        delivery_id_source=lambda size: b"d" * 16,
+    )
+    state = tmp_path / "state.json"
+    mon.save_state(
+        str(state), records, crypto, scope, pending_alert=pending, initialize=True
+    )
+    document = json.loads(state.read_text(encoding="utf-8"))
+    assert set(document["pending_alert"]) == {
+        "attempts",
+        "delivery_id",
+        "event",
+        "next_attempt_at",
+        "webhook_version",
+    }
+    serialized = json.dumps(document)
+    for canary in (
+        "https://url-authority-query-canary.invalid/private",
+        "webhook-secret-canary",
+        "signing-key-id-canary",
+        "timestamp-header-canary",
+        "nonce-canary",
+        "signature-canary",
+        "prepared-request-canary",
+        "source-store-path-canary",
+        "collection-tenant-canary",
+        "record-id-token-canary",
+        "finding-type-count-value-canary",
+        "document-text-canary",
+        "exception-response-canary",
+    ):
+        assert canary not in serialized
 
 
 @pytest.mark.parametrize(
@@ -446,6 +488,106 @@ def test_state_authentication_detects_body_and_authenticator_tampering(tmp_path)
         mon.load_state(str(state), crypto, scope)
 
 
+def test_pending_alert_schema_is_strict_bounded_and_authenticated(tmp_path):
+    crypto = _crypto()
+    scope, records = _snapshot(crypto)
+    pending = mon.new_pending_alert(
+        clock=lambda: 2_000_000_000,
+        delivery_id_source=lambda size: bytes.fromhex("ab" * 16),
+    )
+    expected = {
+        "attempts": 0,
+        "delivery_id": "ab" * 16,
+        "event": "ragleakguard.monitor.exposure-change",
+        "next_attempt_at": 2_000_000_000,
+        "webhook_version": 2,
+    }
+    assert pending == expected
+
+    state = tmp_path / "state.json"
+    mon.save_state(
+        str(state), records, crypto, scope, pending_alert=pending, initialize=True
+    )
+    loaded = mon.load_state(str(state), crypto, scope)
+    assert loaded["pending_alert"] == expected
+
+    mutations = [
+        lambda value: value.update({"unknown": "field"}),
+        lambda value: value.update({"event": "wrong"}),
+        lambda value: value.update({"webhook_version": True}),
+        lambda value: value.update({"webhook_version": 1}),
+        lambda value: value.update({"delivery_id": "A" * 32}),
+        lambda value: value.update({"attempts": True}),
+        lambda value: value.update({"attempts": -1}),
+        lambda value: value.update({"attempts": mon.MAX_PENDING_ALERT_ATTEMPTS + 1}),
+        lambda value: value.update({"next_attempt_at": True}),
+        lambda value: value.update({"next_attempt_at": -1}),
+        lambda value: value.update({"next_attempt_at": mon.MAX_UNIX_TIME + 1}),
+    ]
+    for mutate in mutations:
+        document = _state_document(records, crypto, scope, pending)
+        mutate(document["pending_alert"])
+        _reauth(document, crypto)
+        _write_json(state, document)
+        with pytest.raises(mon.MonitorStateError):
+            mon.load_state(str(state), crypto, scope)
+
+    document = _state_document(records, crypto, scope, pending)
+    document["pending_alert"]["attempts"] = 1
+    _write_json(state, document)
+    with pytest.raises(mon.MonitorStateError):
+        mon.load_state(str(state), crypto, scope)
+
+
+def test_authenticated_v2_loads_without_pending_and_next_save_migrates_to_v3(
+    tmp_path,
+):
+    crypto = _crypto()
+    scope, records = _snapshot(crypto)
+    document = _state_document(records, crypto, scope)
+    document.pop("pending_alert")
+    document["version"] = 2
+    _reauth(document, crypto)
+    state = tmp_path / "state.json"
+    _write_json(state, document)
+    before = state.read_bytes()
+
+    loaded = mon.load_state(str(state), crypto, scope)
+    assert loaded["version"] == 2
+    assert "pending_alert" not in loaded
+    assert state.read_bytes() == before
+
+    mon.save_state(str(state), loaded["records"], crypto, scope)
+    migrated = mon.load_state(str(state), crypto, scope)
+    assert migrated["version"] == 3
+    assert migrated["pending_alert"] is None
+
+
+def test_v2_to_v3_replacement_failure_preserves_authenticated_v2(
+    tmp_path, monkeypatch
+):
+    crypto = _crypto()
+    scope, records = _snapshot(crypto)
+    document = _state_document(records, crypto, scope)
+    document.pop("pending_alert")
+    document["version"] = 2
+    _reauth(document, crypto)
+    state = tmp_path / "state.json"
+    _write_json(state, document)
+    before = state.read_bytes()
+    monkeypatch.setattr(
+        mon,
+        "_replace_state",
+        lambda *args: (_ for _ in ()).throw(OSError("migration-exception-canary")),
+    )
+
+    with pytest.raises(mon.MonitorWriteError) as caught:
+        mon.save_state(str(state), records, crypto, scope)
+    assert "migration-exception-canary" not in str(caught.value)
+    assert state.read_bytes() == before
+    assert not list(tmp_path.glob(".rlg-monitor-*.tmp"))
+
+
 def test_key_rotation_and_store_scope_mismatch_preserve_state(tmp_path):
     first = _crypto()
     scope, records = _snapshot(first)
@@ -475,7 +617,7 @@ def test_key_rotation_and_store_scope_mismatch_preserve_state(tmp_path):
         (b'{"version":1,"records":{"x":{}}}', mon.LegacyMonitorStateError),
         (b'{"version":1', mon.MonitorStateError),
         (b'{"version":1,"records":', mon.MonitorStateError),
-        (b'{"version":3,"records":{}}', mon.UnsupportedMonitorStateError),
+        (b'{"version":4,"records":{}}', mon.UnsupportedMonitorStateError),
         (b'{"version":0,"records":{}}', mon.UnsupportedMonitorStateError),
     ],
     ids=[
@@ -545,6 +687,33 @@ def test_temporary_write_failure_preserves_prior_checkpoint_and_cleans_temp(
     with pytest.raises(mon.MonitorWriteError) as caught:
         mon.save_state(str(state), records, crypto, scope)
     assert "exception-canary" not in str(caught.value)
+    assert state.read_bytes() == before
+    assert not list(tmp_path.glob(".rlg-monitor-*.tmp"))
+
+
+def test_state_fsync_failure_preserves_prior_checkpoint_and_cleans_temp(
+    tmp_path, monkeypatch
+):
+    crypto = _crypto()
+    scope, records = _snapshot(crypto)
+    state = tmp_path / "state.json"
+    mon.save_state(str(state), records, crypto, scope, initialize=True)
+    before = state.read_bytes()
+    monkeypatch.setattr(
+        mon.os,
+        "fsync",
+        lambda fd: (_ for _ in ()).throw(OSError("fsync-exception-canary")),
+    )
+
+    with pytest.raises(mon.MonitorWriteError) as caught:
+        mon.save_state(
+            str(state),
+            records,
+            crypto,
+            scope,
+            pending_alert=mon.new_pending_alert(clock=lambda: 1),
+        )
+    assert "fsync-exception-canary" not in str(caught.value)
     assert state.read_bytes() == before
     assert not list(tmp_path.glob(".rlg-monitor-*.tmp"))
 
@@ -657,13 +826,122 @@ def test_missing_malformed_or_unreadable_key_material_fails_static(tmp_path, con
     assert "key-path-canary" not in str(caught.value)
 
 
+def test_pending_alert_generation_uses_128_bit_csprng_and_static_failures(monkeypatch):
+    calls = []
+
+    def delivery_source(size):
+        calls.append(size)
+        return bytes.fromhex("11" * 16)
+
+    pending = mon.new_pending_alert(
+        clock=lambda: 1234,
+        delivery_id_source=delivery_source,
+    )
+    assert calls == [16]
+    assert pending["delivery_id"] == "11" * 16
+    assert pending["next_attempt_at"] == 1234
+
+    for source in (
+        lambda size: b"short",
+        lambda size: (_ for _ in ()).throw(RuntimeError("exception-canary")),
+    ):
+        with pytest.raises(mon.WebhookPreparationError) as caught:
+            mon.new_pending_alert(clock=lambda: 1234, delivery_id_source=source)
+        assert "exception-canary" not in str(caught.value)
+
+
+def test_bounded_exponential_full_jitter_formula_and_endpoints():
+    observed = []
+
+    def low(envelope):
+        observed.append(envelope)
+        return 0
+
+    assert mon.retry_backoff_seconds(1, jitter_source=low) == 1
+    assert mon.retry_backoff_seconds(2, jitter_source=low) == 1
+    assert mon.retry_backoff_seconds(8, jitter_source=low) == 1
+    assert observed == [30, 60, 3600]
+
+    assert mon.retry_backoff_seconds(
+        1, jitter_source=lambda envelope: envelope - 1
+    ) == 30
+    assert mon.retry_backoff_seconds(
+        2, jitter_source=lambda envelope: envelope - 1
+    ) == 60
+    assert mon.retry_backoff_seconds(
+        mon.MAX_PENDING_ALERT_ATTEMPTS,
+        jitter_source=lambda envelope: envelope - 1,
+    ) == mon.WEBHOOK_RETRY_MAX_SECONDS
+
+
+def test_backoff_uses_csprng_default_and_rejects_bad_jitter(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        mon.secrets,
+        "randbelow",
+        lambda envelope: calls.append(envelope) or envelope - 1,
+    )
+    assert mon.retry_backoff_seconds(1) == 30
+    assert calls == [30]
+
+    for value in (-1, 30, True, "0"):
+        with pytest.raises(mon.WebhookRetryError):
+            mon.retry_backoff_seconds(1, jitter_source=lambda envelope, v=value: v)
+
+
+def test_pending_due_clock_rollback_future_bounds_and_overflow_fail_closed():
+    pending = mon.new_pending_alert(
+        clock=lambda: 100,
+        delivery_id_source=lambda size: b"a" * 16,
+    )
+    assert not mon.pending_alert_is_due(pending, clock=lambda: 99)
+    assert mon.pending_alert_is_due(pending, clock=lambda: 100)
+
+    far_future = dict(pending, next_attempt_at=mon.MAX_UNIX_TIME)
+    assert not mon.pending_alert_is_due(far_future, clock=lambda: 100)
+
+    exhausted = dict(pending, attempts=mon.MAX_PENDING_ALERT_ATTEMPTS)
+    with pytest.raises(mon.WebhookRetryError):
+        mon.pending_alert_is_due(exhausted, clock=lambda: 100)
+    with pytest.raises(mon.WebhookRetryError):
+        mon.advance_pending_alert(exhausted, clock=lambda: 100)
+    with pytest.raises(mon.WebhookRetryError):
+        mon.pending_alert_is_due(
+            pending,
+            clock=lambda: mon.MAX_UNIX_TIME - mon.WEBHOOK_RETRY_MAX_SECONDS + 1,
+        )
+
+
+def test_failed_attempt_advances_metadata_without_changing_delivery_id():
+    pending = mon.new_pending_alert(
+        clock=lambda: 100,
+        delivery_id_source=lambda size: b"b" * 16,
+    )
+    first = mon.advance_pending_alert(
+        pending,
+        clock=lambda: 200,
+        jitter_source=lambda envelope: envelope - 1,
+    )
+    second = mon.advance_pending_alert(
+        first,
+        clock=lambda: 300,
+        jitter_source=lambda envelope: 0,
+    )
+    assert first["delivery_id"] == second["delivery_id"] == pending["delivery_id"]
+    assert first["attempts"] == 1
+    assert first["next_attempt_at"] == 230
+    assert second["attempts"] == 2
+    assert second["next_attempt_at"] == 301
+
+
 WEBHOOK_VECTOR_SECRET = bytes(range(32))
 WEBHOOK_VECTOR_KEY_ID = "00112233445566778899aabbccddeeff"
 WEBHOOK_VECTOR_URL = "https://receiver.example.test/hooks/rlg?channel=security"
 WEBHOOK_VECTOR_TIMESTAMP = 1786320000
 WEBHOOK_VECTOR_NONCE = "0123456789abcdeffedcba9876543210"
+WEBHOOK_VECTOR_DELIVERY_ID = "ffeeddccbbaa99887766554433221100"
 WEBHOOK_VECTOR_SIGNATURE = (
-    "v1=6405d41258cc777845c57c39ec86528bb19a1b8f30c589c8fe870274f397ae3c"
+    "v2=fd7ce5c478368ffeb37c38d04d9ae5cb18e2a45b507e870ab9f48829ce13a438"
 )
 WEBHOOK_HEADER_NAMES = {
     "Host",
@@ -672,6 +950,7 @@ WEBHOOK_HEADER_NAMES = {
     "User-Agent",
     "X-RAGLeakGuard-Webhook-Version",
     "X-RAGLeakGuard-Key-Id",
+    "X-RAGLeakGuard-Delivery-Id",
     "X-RAGLeakGuard-Timestamp",
     "X-RAGLeakGuard-Nonce",
     "X-RAGLeakGuard-Signature",
@@ -687,6 +966,7 @@ def _prepared_vector():
         True,
         mon.validate_webhook_url(WEBHOOK_VECTOR_URL),
         _vector_secret(),
+        WEBHOOK_VECTOR_DELIVERY_ID,
         clock=lambda: WEBHOOK_VECTOR_TIMESTAMP,
         nonce_source=lambda size: bytes.fromhex(WEBHOOK_VECTOR_NONCE),
     )
@@ -722,11 +1002,11 @@ def test_webhook_secret_generation_loading_and_exclusive_creation(tmp_path, monk
         "construction", "key_id", "purpose", "secret", "version"
     }
     assert document == {
-        "construction": "RLG-WEBHOOK-HMAC-SHA256-v1",
+        "construction": "RLG-WEBHOOK-HMAC-SHA256-v2",
         "key_id": WEBHOOK_VECTOR_KEY_ID,
-        "purpose": "ragleakguard.webhook-signing",
+        "purpose": "ragleakguard.webhook-signing.v2",
         "secret": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
-        "version": 1,
+        "version": 2,
     }
     assert loaded.key_id == WEBHOOK_VECTOR_KEY_ID
     assert loaded._material == WEBHOOK_VECTOR_SECRET
@@ -745,32 +1025,32 @@ def test_webhook_secret_generation_loading_and_exclusive_creation(tmp_path, monk
         b"{",
         b"[]",
         b'\xff',
-        b'{"version":1,"version":1}',
+        b'{"version":2,"version":2}',
         json.dumps({
             "version": True,
-            "purpose": "ragleakguard.webhook-signing",
-            "construction": "RLG-WEBHOOK-HMAC-SHA256-v1",
+            "purpose": "ragleakguard.webhook-signing.v2",
+            "construction": "RLG-WEBHOOK-HMAC-SHA256-v2",
             "key_id": WEBHOOK_VECTOR_KEY_ID,
             "secret": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
         }).encode(),
         json.dumps({
-            "version": 1,
+            "version": 2,
             "purpose": "ragleakguard.monitor",
             "construction": "RLG-MONITOR-HMAC-SHA256-v1",
             "key_id": WEBHOOK_VECTOR_KEY_ID,
             "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
         }).encode(),
         json.dumps({
-            "version": 1,
-            "purpose": "ragleakguard.webhook-signing",
+            "version": 2,
+            "purpose": "ragleakguard.webhook-signing.v2",
             "construction": "wrong-construction",
             "key_id": WEBHOOK_VECTOR_KEY_ID,
             "secret": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
         }).encode(),
         json.dumps({
-            "version": 1,
-            "purpose": "ragleakguard.webhook-signing",
-            "construction": "RLG-WEBHOOK-HMAC-SHA256-v1",
+            "version": 2,
+            "purpose": "ragleakguard.webhook-signing.v2",
+            "construction": "RLG-WEBHOOK-HMAC-SHA256-v2",
             "key_id": "A" * 32,
             "secret": "c2hvcnQ=",
             "unknown": "field",
@@ -826,7 +1106,7 @@ def test_webhook_secret_loader_rejects_oversize_directory_symlink_and_broad_mode
     [
         lambda doc: doc.pop("secret"),
         lambda doc: doc.update({"unknown": "field"}),
-        lambda doc: doc.update({"version": 2}),
+        lambda doc: doc.update({"version": 1}),
         lambda doc: doc.update({"purpose": "wrong-purpose"}),
         lambda doc: doc.update({"construction": "wrong-construction"}),
         lambda doc: doc.update({"key_id": "z" * 32}),
@@ -852,6 +1132,24 @@ def test_webhook_secret_schema_has_an_exact_allowlist(tmp_path, mutate):
         mon.load_webhook_secret_file(str(path))
 
 
+def test_protocol_v1_secret_cannot_masquerade_as_v2(tmp_path):
+    path = tmp_path / "legacy-v1-secret.json"
+    path.write_text(
+        json.dumps(
+            {
+                "construction": "RLG-WEBHOOK-HMAC-SHA256-v1",
+                "key_id": WEBHOOK_VECTOR_KEY_ID,
+                "purpose": "ragleakguard.webhook-signing",
+                "secret": base64.b64encode(WEBHOOK_VECTOR_SECRET).decode("ascii"),
+                "version": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(mon.WebhookSecretError):
+        mon.load_webhook_secret_file(str(path))
+
+
 def test_webhook_secret_generation_failure_removes_partial_file(tmp_path, monkeypatch):
     path = tmp_path / "secret.json"
     monkeypatch.setattr(
@@ -866,12 +1164,12 @@ def test_webhook_secret_generation_failure_removes_partial_file(tmp_path, monkey
     assert "exception-canary" not in str(caught.value)
 
 
-def test_version_1_body_headers_and_published_hmac_vector_are_exact():
+def test_version_2_body_headers_and_published_hmac_vector_are_exact():
     prepared = _prepared_vector()
 
     assert mon.build_webhook_body() is prepared.body
     assert prepared.body == (
-        b'{"event":"ragleakguard.monitor.exposure-change","version":1}'
+        b'{"event":"ragleakguard.monitor.exposure-change","version":2}'
     )
     assert len(prepared.body) == 60
     assert prepared.target.authority == "receiver.example.test"
@@ -881,9 +1179,10 @@ def test_version_1_body_headers_and_published_hmac_vector_are_exact():
         "Host": "receiver.example.test",
         "Content-Length": "60",
         "Content-Type": "application/json",
-        "User-Agent": "RAGLeakGuard-Webhook/1",
-        "X-RAGLeakGuard-Webhook-Version": "1",
+        "User-Agent": "RAGLeakGuard-Webhook/2",
+        "X-RAGLeakGuard-Webhook-Version": "2",
         "X-RAGLeakGuard-Key-Id": WEBHOOK_VECTOR_KEY_ID,
+        "X-RAGLeakGuard-Delivery-Id": WEBHOOK_VECTOR_DELIVERY_ID,
         "X-RAGLeakGuard-Timestamp": str(WEBHOOK_VECTOR_TIMESTAMP),
         "X-RAGLeakGuard-Nonce": WEBHOOK_VECTOR_NONCE,
         "X-RAGLeakGuard-Signature": WEBHOOK_VECTOR_SIGNATURE,
@@ -906,21 +1205,22 @@ def test_published_vector_matches_independent_framing_implementation():
         )
 
     fields = [
-        ("construction", b"RLG-WEBHOOK-HMAC-SHA256-v1"),
+        ("construction", b"RLG-WEBHOOK-HMAC-SHA256-v2"),
         ("method", b"POST"),
         ("authority", b"receiver.example.test"),
         ("request-target", b"/hooks/rlg?channel=security"),
         ("content-length", b"60"),
         ("content-type", b"application/json"),
-        ("user-agent", b"RAGLeakGuard-Webhook/1"),
-        ("webhook-version", b"1"),
+        ("user-agent", b"RAGLeakGuard-Webhook/2"),
+        ("webhook-version", b"2"),
         ("key-id", WEBHOOK_VECTOR_KEY_ID.encode("ascii")),
+        ("delivery-id", WEBHOOK_VECTOR_DELIVERY_ID.encode("ascii")),
         ("timestamp", str(WEBHOOK_VECTOR_TIMESTAMP).encode("ascii")),
         ("nonce", WEBHOOK_VECTOR_NONCE.encode("ascii")),
         ("body", prepared.body),
     ]
     message = b"".join(independent_frame(label, value) for label, value in fields)
-    independent_signature = "v1=" + hmac.new(
+    independent_signature = "v2=" + hmac.new(
         WEBHOOK_VECTOR_SECRET, message, hashlib.sha256
     ).hexdigest()
 
@@ -950,11 +1250,12 @@ def test_prepared_request_recursively_excludes_application_privacy_canaries():
     assert base64.b64encode(WEBHOOK_VECTOR_SECRET).decode("ascii") not in serialized
 
 
-def test_request_builder_accepts_only_trigger_target_secret_clock_and_nonce():
+def test_request_builder_accepts_only_trigger_target_secret_delivery_clock_nonce():
     assert tuple(inspect.signature(mon.prepare_webhook_request).parameters) == (
         "alert_trigger",
         "target",
         "secret",
+        "delivery_id",
         "clock",
         "nonce_source",
     )
@@ -1020,7 +1321,8 @@ def test_receiver_accepts_published_vector_and_uses_constant_time_comparison(
 
     monkeypatch.setattr(mon.hmac, "compare_digest", compare)
     cache = mon.WebhookReplayCache()
-    assert mon.verify_webhook_request(
+    processed = []
+    result = mon.verify_webhook_request(
         method="POST",
         authority=prepared.target.authority,
         request_target=prepared.target.request_target,
@@ -1029,7 +1331,11 @@ def test_receiver_accepts_published_vector_and_uses_constant_time_comparison(
         secrets_by_key_id={WEBHOOK_VECTOR_KEY_ID: WEBHOOK_VECTOR_SECRET},
         receiver_now=WEBHOOK_VECTOR_TIMESTAMP,
         replay_cache=cache,
+        delivery_store=mon.WebhookMemoryDeliveryStore(),
+        process_event=lambda: processed.append("processed"),
     )
+    assert result == mon.WebhookVerificationResult(duplicate=False)
+    assert processed == ["processed"]
     assert calls
 
 
@@ -1044,18 +1350,19 @@ def test_receiver_accepts_published_vector_and_uses_constant_time_comparison(
         lambda request: request["headers"].__setitem__("Content-Length", "59"),
         lambda request: request["headers"].__setitem__("Content-Type", "text/plain"),
         lambda request: request["headers"].__setitem__("User-Agent", "Python/3"),
-        lambda request: request["headers"].__setitem__("X-RAGLeakGuard-Webhook-Version", "2"),
+        lambda request: request["headers"].__setitem__("X-RAGLeakGuard-Webhook-Version", "1"),
         lambda request: request["headers"].__setitem__("X-RAGLeakGuard-Key-Id", "f" * 32),
+        lambda request: request["headers"].__setitem__("X-RAGLeakGuard-Delivery-Id", "e" * 32),
         lambda request: request["headers"].__setitem__("X-RAGLeakGuard-Timestamp", "01786320000"),
         lambda request: request["headers"].__setitem__("X-RAGLeakGuard-Nonce", "A" * 32),
-        lambda request: request["headers"].__setitem__("X-RAGLeakGuard-Signature", "v1=" + "A" * 64),
+        lambda request: request["headers"].__setitem__("X-RAGLeakGuard-Signature", "v2=" + "A" * 64),
         lambda request: request["headers"].__setitem__("Authorization", "canary"),
         lambda request: request["headers"].pop("Content-Type"),
         lambda request: request.update(request_target="/" + "x" * 2048),
     ],
     ids=[
         "method", "authority", "target", "body", "host", "length", "type",
-        "agent", "version", "key-id", "timestamp", "nonce", "signature",
+        "agent", "version", "key-id", "delivery-id", "timestamp", "nonce", "signature",
         "extra-header", "missing-header", "over-length-url",
     ],
 )
@@ -1075,6 +1382,8 @@ def test_receiver_rejects_tampering_and_header_allowlist_violations(tamper):
             secrets_by_key_id={WEBHOOK_VECTOR_KEY_ID: WEBHOOK_VECTOR_SECRET},
             receiver_now=WEBHOOK_VECTOR_TIMESTAMP,
             replay_cache=mon.WebhookReplayCache(),
+            delivery_store=mon.WebhookMemoryDeliveryStore(),
+            process_event=lambda: None,
         )
     assert str(caught.value) == "Webhook request verification failed."
 
@@ -1089,6 +1398,8 @@ def test_receiver_rejects_wrong_unknown_and_retired_keys_and_duplicate_headers()
         body=prepared.body,
         receiver_now=WEBHOOK_VECTOR_TIMESTAMP,
         replay_cache=mon.WebhookReplayCache(),
+        delivery_store=mon.WebhookMemoryDeliveryStore(),
+        process_event=lambda: None,
     )
     for secrets_by_key_id in ({}, {WEBHOOK_VECTOR_KEY_ID: b"x" * 32}):
         with pytest.raises(mon.WebhookVerificationError):
@@ -1115,7 +1426,13 @@ def test_receiver_authenticates_before_freshness_and_replay_acceptance():
 
     cache = Cache()
     invalid_headers = dict(prepared.headers)
-    invalid_headers["X-RAGLeakGuard-Signature"] = "v1=" + "0" * 64
+    invalid_headers["X-RAGLeakGuard-Signature"] = "v2=" + "0" * 64
+    delivery_calls = []
+
+    class DeliveryStore:
+        def process_once(self, *args):
+            delivery_calls.append(args)
+            return True
     with pytest.raises(mon.WebhookVerificationError):
         mon.verify_webhook_request(
             method="POST",
@@ -1126,6 +1443,8 @@ def test_receiver_authenticates_before_freshness_and_replay_acceptance():
             secrets_by_key_id={WEBHOOK_VECTOR_KEY_ID: WEBHOOK_VECTOR_SECRET},
             receiver_now=WEBHOOK_VECTOR_TIMESTAMP,
             replay_cache=cache,
+            delivery_store=DeliveryStore(),
+            process_event=lambda: None,
         )
     assert not cache.calls
 
@@ -1139,8 +1458,11 @@ def test_receiver_authenticates_before_freshness_and_replay_acceptance():
             secrets_by_key_id={WEBHOOK_VECTOR_KEY_ID: WEBHOOK_VECTOR_SECRET},
             receiver_now=WEBHOOK_VECTOR_TIMESTAMP + 301,
             replay_cache=cache,
+            delivery_store=DeliveryStore(),
+            process_event=lambda: None,
         )
     assert not cache.calls
+    assert not delivery_calls
 
 
 @pytest.mark.parametrize(
@@ -1153,6 +1475,7 @@ def test_receiver_timestamp_freshness_boundaries(offset, accepted):
         True,
         mon.validate_webhook_url("https://receiver.example.test/hook"),
         _vector_secret(),
+        WEBHOOK_VECTOR_DELIVERY_ID,
         clock=lambda: timestamp + offset,
         nonce_source=lambda size: bytes.fromhex(WEBHOOK_VECTOR_NONCE),
     )
@@ -1165,6 +1488,8 @@ def test_receiver_timestamp_freshness_boundaries(offset, accepted):
         secrets_by_key_id={WEBHOOK_VECTOR_KEY_ID: WEBHOOK_VECTOR_SECRET},
         receiver_now=timestamp,
         replay_cache=mon.WebhookReplayCache(),
+        delivery_store=mon.WebhookMemoryDeliveryStore(),
+        process_event=lambda: None,
     )
     if accepted:
         assert call()
@@ -1181,9 +1506,11 @@ def test_receiver_replay_cache_is_atomic_and_retains_future_skew_until_expiry():
         True,
         mon.validate_webhook_url("https://receiver.example.test/hook"),
         _vector_secret(),
+        WEBHOOK_VECTOR_DELIVERY_ID,
         clock=lambda: timestamp,
         nonce_source=lambda size: bytes.fromhex(WEBHOOK_VECTOR_NONCE),
     )
+    delivery_store = mon.WebhookMemoryDeliveryStore()
 
     def verify(receiver_now):
         return mon.verify_webhook_request(
@@ -1195,6 +1522,8 @@ def test_receiver_replay_cache_is_atomic_and_retains_future_skew_until_expiry():
             secrets_by_key_id={WEBHOOK_VECTOR_KEY_ID: WEBHOOK_VECTOR_SECRET},
             receiver_now=receiver_now,
             replay_cache=cache,
+            delivery_store=delivery_store,
+            process_event=lambda: None,
         )
 
     assert verify(now)
@@ -1250,10 +1579,12 @@ def test_receiver_rotation_overlap_accepts_distinct_key_ids():
         True,
         mon.validate_webhook_url(WEBHOOK_VECTOR_URL),
         new_secret,
+        "00" * 16,
         clock=lambda: WEBHOOK_VECTOR_TIMESTAMP,
         nonce_source=lambda size: b"y" * 16,
     )
     cache = mon.WebhookReplayCache()
+    delivery_store = mon.WebhookMemoryDeliveryStore()
     mapping = {
         WEBHOOK_VECTOR_KEY_ID: WEBHOOK_VECTOR_SECRET,
         new_secret.key_id: new_secret._material,
@@ -1268,7 +1599,74 @@ def test_receiver_rotation_overlap_accepts_distinct_key_ids():
             secrets_by_key_id=mapping,
             receiver_now=WEBHOOK_VECTOR_TIMESTAMP,
             replay_cache=cache,
+            delivery_store=delivery_store,
+            process_event=lambda: None,
         )
+
+
+def test_receiver_shared_delivery_store_returns_duplicate_success_without_reprocessing():
+    first = _prepared_vector()
+    retry = mon.prepare_webhook_request(
+        True,
+        mon.validate_webhook_url(WEBHOOK_VECTOR_URL),
+        _vector_secret(),
+        WEBHOOK_VECTOR_DELIVERY_ID,
+        clock=lambda: WEBHOOK_VECTOR_TIMESTAMP + 1,
+        nonce_source=lambda size: b"r" * 16,
+    )
+    shared_delivery_store = mon.WebhookMemoryDeliveryStore()
+    processed = []
+
+    def receive(prepared, replay_cache):
+        return mon.verify_webhook_request(
+            method="POST",
+            authority=prepared.target.authority,
+            request_target=prepared.target.request_target,
+            headers=_header_pairs(prepared),
+            body=prepared.body,
+            secrets_by_key_id={WEBHOOK_VECTOR_KEY_ID: WEBHOOK_VECTOR_SECRET},
+            receiver_now=WEBHOOK_VECTOR_TIMESTAMP + 1,
+            replay_cache=replay_cache,
+            delivery_store=shared_delivery_store,
+            process_event=lambda: processed.append("processed"),
+        )
+
+    first_result = receive(first, mon.WebhookReplayCache())
+    duplicate_result = receive(retry, mon.WebhookReplayCache())
+    assert first_result == mon.WebhookVerificationResult(duplicate=False)
+    assert duplicate_result == mon.WebhookVerificationResult(duplicate=True)
+    assert processed == ["processed"]
+    assert "redacted" in repr(shared_delivery_store).lower()
+
+
+def test_receiver_requires_atomic_delivery_interface_and_static_processor_failure():
+    prepared = _prepared_vector()
+    base = dict(
+        method="POST",
+        authority=prepared.target.authority,
+        request_target=prepared.target.request_target,
+        headers=_header_pairs(prepared),
+        body=prepared.body,
+        secrets_by_key_id={WEBHOOK_VECTOR_KEY_ID: WEBHOOK_VECTOR_SECRET},
+        receiver_now=WEBHOOK_VECTOR_TIMESTAMP,
+        replay_cache=mon.WebhookReplayCache(),
+    )
+    with pytest.raises(mon.WebhookVerificationError):
+        mon.verify_webhook_request(
+            **base,
+            delivery_store=object(),
+            process_event=lambda: None,
+        )
+
+    with pytest.raises(mon.WebhookVerificationError) as caught:
+        mon.verify_webhook_request(
+            **dict(base, replay_cache=mon.WebhookReplayCache()),
+            delivery_store=mon.WebhookMemoryDeliveryStore(),
+            process_event=lambda: (_ for _ in ()).throw(
+                RuntimeError("processor-exception-canary")
+            ),
+        )
+    assert "processor-exception-canary" not in str(caught.value)
 
 
 class _FakeRawSocket:
@@ -1550,6 +1948,7 @@ def test_manually_inconsistent_target_is_rejected_before_network(monkeypatch):
             True,
             target,
             _vector_secret(),
+            WEBHOOK_VECTOR_DELIVERY_ID,
             clock=lambda: WEBHOOK_VECTOR_TIMESTAMP,
             nonce_source=lambda size: bytes.fromhex(WEBHOOK_VECTOR_NONCE),
         )
@@ -1561,7 +1960,10 @@ def test_preparation_rejects_bad_clock_nonce_and_false_trigger_with_static_error
     cases = [
         dict(alert_trigger=False),
         dict(clock=lambda: -1),
+        dict(clock=lambda: float("nan")),
+        dict(clock=lambda: mon.MAX_UNIX_TIME + 1),
         dict(clock=lambda: "bad"),
+        dict(delivery_id="A" * 32),
         dict(nonce_source=lambda size: b"short"),
         dict(nonce_source=lambda size: (_ for _ in ()).throw(RuntimeError("exception-canary"))),
     ]
@@ -1570,6 +1972,7 @@ def test_preparation_rejects_bad_clock_nonce_and_false_trigger_with_static_error
             alert_trigger=True,
             target=target,
             secret=_vector_secret(),
+            delivery_id=WEBHOOK_VECTOR_DELIVERY_ID,
             clock=lambda: WEBHOOK_VECTOR_TIMESTAMP,
             nonce_source=lambda size: bytes.fromhex(WEBHOOK_VECTOR_NONCE),
         )
@@ -1585,15 +1988,15 @@ def test_public_webhook_protocol_records_vector_lifecycle_and_residual_risks():
     ).read_text(encoding="utf-8")
 
     for exact in (
-        '{"event":"ragleakguard.monitor.exposure-change","version":1}',
+        '{"event":"ragleakguard.monitor.exposure-change","version":2}',
         WEBHOOK_VECTOR_SIGNATURE,
-        "RLG-WEBHOOK-HMAC-SHA256-v1",
+        "RLG-WEBHOOK-HMAC-SHA256-v2",
         "abs(receiver_now - timestamp) <= 300",
         "timestamp + 300",
         "Windows DACL",
-        "shared/durable cache",
-        "checkpoint is already advanced",
-        "exactly-once/at-least-once",
+        "durable, atomic delivery-ID store",
+        "pending alert blocks source access",
+        "exactly-once",
     ):
         assert exact in protocol
 

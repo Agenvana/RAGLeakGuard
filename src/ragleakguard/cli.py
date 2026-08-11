@@ -65,12 +65,12 @@ def _abort_monitor(error) -> None:
         print(
             "[red]Version-1 monitor state is incompatible and was preserved.[/] "
             "Preserve the legacy file, choose a new --state path, and explicitly "
-            "initialize a version-2 baseline with --initialize."
+            "initialize a version-3 baseline with --initialize."
         )
     elif isinstance(error, mon.MonitorBaselineRequiredError):
         print(
             "[red]Monitor baseline is absent.[/] Confirm the checkpoint was not lost "
-            "or deleted, then explicitly create a version-2 baseline with --initialize."
+            "or deleted, then explicitly create a version-3 baseline with --initialize."
         )
     elif isinstance(error, mon.MonitorInitializationError):
         print(
@@ -115,6 +115,46 @@ def _abort_webhook_preparation() -> None:
         "preserved and no request was sent."
     )
     raise typer.Exit(EXIT_WEBHOOK)
+
+
+def _abort_pending_configuration() -> None:
+    print(
+        "[red]A webhook alert is pending.[/] Provide the configured protocol-v2 "
+        "HTTPS receiver and protocol-v2 secret; the source was not accessed."
+    )
+    raise typer.Exit(EXIT_WEBHOOK)
+
+
+def _abort_pending_backoff() -> None:
+    print(
+        "[red]A webhook alert is pending.[/] Retry backoff has not elapsed; "
+        "the source was not accessed and no request was sent."
+    )
+    raise typer.Exit(EXIT_WEBHOOK)
+
+
+def _abort_pending_retry() -> None:
+    print(
+        "[red]Webhook retry cannot proceed safely.[/] The authenticated pending "
+        "alert was preserved; the source was not accessed and no request was sent."
+    )
+    raise typer.Exit(EXIT_WEBHOOK)
+
+
+def _abort_retry_checkpoint() -> None:
+    print(
+        "[red]Webhook retry checkpoint failed.[/] The last authenticated pending "
+        "alert was preserved; delivery may be ambiguous."
+    )
+    raise typer.Exit(EXIT_MONITOR_STATE)
+
+
+def _abort_pending_clear() -> None:
+    print(
+        "[red]Webhook delivery is ambiguous.[/] A 2xx response was accepted but "
+        "the pending alert could not be durably cleared; a retry may duplicate it."
+    )
+    raise typer.Exit(EXIT_MONITOR_STATE)
 
 
 @app.command("generate-monitor-key")
@@ -224,6 +264,71 @@ def scan(
     raise typer.Exit(0)
 
 
+def _deliver_pending_alert(
+    mon,
+    *,
+    state: str,
+    records,
+    crypto,
+    scope_token: str,
+    pending_alert,
+    webhook_target,
+    webhook_secret,
+) -> None:
+    """Make at most one attempt and durably retain or clear the outbox entry."""
+    try:
+        due = mon.pending_alert_is_due(pending_alert)
+    except mon.WebhookRetryError:
+        _abort_pending_retry()
+    if not due:
+        _abort_pending_backoff()
+
+    try:
+        prepared = mon.prepare_webhook_request(
+            True,
+            webhook_target,
+            webhook_secret,
+            pending_alert["delivery_id"],
+        )
+    except mon.WebhookError:
+        _abort_webhook_preparation()
+
+    try:
+        mon.post_webhook(prepared)
+    except mon.WebhookError:
+        try:
+            updated = mon.advance_pending_alert(pending_alert)
+            mon.save_state(
+                state,
+                records,
+                crypto,
+                scope_token,
+                pending_alert=updated,
+            )
+        except (mon.MonitorError, mon.WebhookError):
+            _abort_retry_checkpoint()
+        print(
+            "[red]Webhook delivery failed.[/] The authenticated pending alert "
+            "was retained for a bounded retry."
+        )
+        raise typer.Exit(EXIT_WEBHOOK)
+
+    try:
+        mon.save_state(
+            state,
+            records,
+            crypto,
+            scope_token,
+            pending_alert=None,
+        )
+    except mon.MonitorError:
+        _abort_pending_clear()
+    print(
+        "[green]Webhook response accepted; pending alert cleared.[/] "
+        "No downstream processing is claimed."
+    )
+
+
 @app.command()
 def monitor(
     source: str = typer.Option(..., "--source", help="Vector store type: chroma | pinecone"),
@@ -236,7 +341,7 @@ def monitor(
     state: str = typer.Option(
         ".rlg-state.json",
         "--state",
-        help="Authenticated version-2 checkpoint (never raw data)",
+        help="Authenticated version-3 checkpoint and one-entry outbox",
     ),
     webhook: Optional[str] = typer.Option(
         None,
@@ -246,7 +351,7 @@ def monitor(
     webhook_secret_file: Optional[str] = typer.Option(
         None,
         "--webhook-secret-file",
-        help="Dedicated webhook signing secret; required with --webhook",
+        help="Dedicated protocol-v2 webhook secret; required with --webhook",
     ),
     key_file: str = typer.Option(
         ...,
@@ -258,7 +363,7 @@ def monitor(
         "--initialize",
         help="Explicitly create a new baseline; never overwrites existing state",
     ),
-    once: bool = typer.Option(True, "--once", help="Run a single check (cron-friendly; the only mode in v1)"),
+    once: bool = typer.Option(True, "--once", help="Run one check or one pending delivery attempt"),
 ):
     """Re-scan a store and alert on NEW or CHANGED sensitive findings since the last run.
 
@@ -266,7 +371,7 @@ def monitor(
 
     Exit codes: 0 = initialized/no new exposure; 1 = new/changed findings;
     2 = usage/locale error; 3 = detection unavailable; 4 = monitor key/state failure;
-    5 = webhook failure.
+    5 = webhook pending/configuration/preparation/delivery failure.
     """
     source = source.lower()
     if source == "chroma":
@@ -315,6 +420,24 @@ def monitor(
     except mon.MonitorError as error:
         _abort_monitor(error)
 
+    pending_alert = None
+    if previous is not None and previous.get("version") == mon.STATE_VERSION:
+        pending_alert = previous["pending_alert"]
+    if pending_alert is not None:
+        if webhook_target is None or webhook_secret is None:
+            _abort_pending_configuration()
+        _deliver_pending_alert(
+            mon,
+            state=state,
+            records=previous["records"],
+            crypto=crypto,
+            scope_token=scope_token,
+            pending_alert=pending_alert,
+            webhook_target=webhook_target,
+            webhook_secret=webhook_secret,
+        )
+        raise typer.Exit(0)
+
     items = list(read_chroma(path))
 
     from ragleakguard.detect import detect
@@ -358,35 +481,38 @@ def monitor(
         )
         raise typer.Exit(0)
 
-    prepared_webhook = None
     if webhook_target is not None:
         try:
-            prepared_webhook = mon.prepare_webhook_request(
-                True,
-                webhook_target,
-                webhook_secret,
-            )
+            pending_alert = mon.new_pending_alert()
         except mon.WebhookError:
             _abort_webhook_preparation()
-
-    try:
-        mon.save_state(state, current, crypto, scope_token)
-    except mon.MonitorError as error:
-        _abort_monitor(error)
-
-    if prepared_webhook is not None:
         try:
-            mon.post_webhook(prepared_webhook)
-        except mon.WebhookError:
-            print(
-                "[red]Webhook delivery failed.[/] No delivery success is claimed; "
-                "the checkpoint was advanced and this alert may be lost."
+            mon.save_state(
+                state,
+                current,
+                crypto,
+                scope_token,
+                pending_alert=pending_alert,
             )
-            raise typer.Exit(EXIT_WEBHOOK)
+        except mon.MonitorError as error:
+            _abort_monitor(error)
+        _deliver_pending_alert(
+            mon,
+            state=state,
+            records=current,
+            crypto=crypto,
+            scope_token=scope_token,
+            pending_alert=pending_alert,
+            webhook_target=webhook_target,
+            webhook_secret=webhook_secret,
+        )
+    else:
+        try:
+            mon.save_state(state, current, crypto, scope_token)
+        except mon.MonitorError as error:
+            _abort_monitor(error)
 
     print("[bold red]Exposure change detected.[/]")
-    if prepared_webhook is not None:
-        print("[green]Webhook alert delivered.[/]")
 
     raise typer.Exit(1)
 

@@ -1,9 +1,10 @@
-"""Privacy-safe monitor state and authenticated minimal webhook alerts.
+"""Privacy-safe monitor state and authenticated durable webhook alerts.
 
-Version-2 state contains only purpose-bound keyed tokens, finding counts,
-validation totals, public construction/key identifiers, and an authenticator.
-Webhook alerts use a separate operator secret, a fixed 60-byte body, an exact
-HTTP/1.1 header allowlist, and one monotonic-deadline HTTPS request.
+Version-3 state contains purpose-bound keyed checkpoint data plus one optional,
+privacy-minimal pending alert under the existing authenticated-state
+construction. Webhook protocol v2 uses a separate operator secret, a stable
+delivery ID, a fixed 60-byte body, an exact HTTP/1.1 header allowlist, and one
+monotonic-deadline HTTPS request per invocation.
 """
 import base64
 import binascii
@@ -28,7 +29,8 @@ from types import MappingProxyType
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 
-STATE_VERSION = 2
+STATE_VERSION = 3
+MIGRATABLE_STATE_VERSION = 2
 KEY_FILE_VERSION = 1
 KEY_PURPOSE = "ragleakguard.monitor"
 CONSTRUCTION_ID = "RLG-MONITOR-HMAC-SHA256-v1"
@@ -43,9 +45,16 @@ MAX_RECORDS = 1_000_000
 MAX_FINDINGS_PER_RECORD = 1_000_000
 MAX_TOTAL_FINDINGS = MAX_RECORDS * MAX_FINDINGS_PER_RECORD
 
-WEBHOOK_SECRET_FILE_VERSION = 1
-WEBHOOK_SECRET_PURPOSE = "ragleakguard.webhook-signing"
-WEBHOOK_CONSTRUCTION_ID = "RLG-WEBHOOK-HMAC-SHA256-v1"
+PENDING_ALERT_EVENT = "ragleakguard.monitor.exposure-change"
+PENDING_ALERT_WEBHOOK_VERSION = 2
+MAX_PENDING_ALERT_ATTEMPTS = (1 << 63) - 1
+MAX_UNIX_TIME = 253_402_300_799
+WEBHOOK_RETRY_BASE_SECONDS = 30
+WEBHOOK_RETRY_MAX_SECONDS = 3_600
+
+WEBHOOK_SECRET_FILE_VERSION = 2
+WEBHOOK_SECRET_PURPOSE = "ragleakguard.webhook-signing.v2"
+WEBHOOK_CONSTRUCTION_ID = "RLG-WEBHOOK-HMAC-SHA256-v2"
 WEBHOOK_SECRET_BYTES = 32
 MAX_WEBHOOK_SECRET_FILE_BYTES = 4096
 MAX_WEBHOOK_URL_BYTES = 2048
@@ -54,10 +63,10 @@ WEBHOOK_DEADLINE_SECONDS = 10.0
 WEBHOOK_FRESHNESS_SECONDS = 300
 WEBHOOK_METHOD = "POST"
 WEBHOOK_CONTENT_TYPE = "application/json"
-WEBHOOK_USER_AGENT = "RAGLeakGuard-Webhook/1"
-WEBHOOK_VERSION = "1"
+WEBHOOK_USER_AGENT = "RAGLeakGuard-Webhook/2"
+WEBHOOK_VERSION = "2"
 WEBHOOK_BODY_BYTES = (
-    b'{"event":"ragleakguard.monitor.exposure-change","version":1}'
+    b'{"event":"ragleakguard.monitor.exposure-change","version":2}'
 )
 WEBHOOK_HEADER_ORDER = (
     "Host",
@@ -66,6 +75,7 @@ WEBHOOK_HEADER_ORDER = (
     "User-Agent",
     "X-RAGLeakGuard-Webhook-Version",
     "X-RAGLeakGuard-Key-Id",
+    "X-RAGLeakGuard-Delivery-Id",
     "X-RAGLeakGuard-Timestamp",
     "X-RAGLeakGuard-Nonce",
     "X-RAGLeakGuard-Signature",
@@ -75,7 +85,8 @@ WEBHOOK_HEADER_ALLOWLIST = frozenset(WEBHOOK_HEADER_ORDER)
 _HEX_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _KEY_ID = re.compile(r"^[0-9a-f]{32}$")
 _ENTITY_TYPE = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
-_WEBHOOK_SIGNATURE = re.compile(r"^v1=[0-9a-f]{64}$")
+_DELIVERY_ID = re.compile(r"^[0-9a-f]{32}$")
+_WEBHOOK_SIGNATURE = re.compile(r"^v2=[0-9a-f]{64}$")
 _WEBHOOK_TIMESTAMP = re.compile(r"^(?:0|[1-9][0-9]*)$")
 _HTTP_TOKEN = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 _VALID_PERCENT_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
@@ -155,7 +166,11 @@ class WebhookTransportError(WebhookError):
 
 
 class WebhookVerificationError(WebhookError):
-    """A received webhook request did not satisfy the version-1 contract."""
+    """A received webhook request did not satisfy the version-2 contract."""
+
+
+class WebhookRetryError(WebhookError):
+    """A pending alert cannot safely make or schedule its next attempt."""
 
 
 class _DuplicateJsonKey(ValueError):
@@ -272,6 +287,17 @@ class PreparedWebhook:
 
     def __repr__(self) -> str:
         return "PreparedWebhook(<redacted>)"
+
+
+@dataclass(frozen=True)
+class WebhookVerificationResult:
+    """Authenticated receiver result suitable for a successful HTTP response."""
+
+    duplicate: bool
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.duplicate, bool):
+            raise WebhookVerificationError("Webhook request verification failed.")
 
 
 class MonitorCrypto:
@@ -600,6 +626,33 @@ def _validate_digest(value: Any) -> bool:
     return isinstance(value, str) and _HEX_DIGEST.fullmatch(value) is not None
 
 
+def _validate_pending_alert(value: Any) -> Optional[Dict[str, Any]]:
+    """Validate and copy the exact privacy-minimal one-entry outbox value."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {
+        "attempts",
+        "delivery_id",
+        "event",
+        "next_attempt_at",
+        "webhook_version",
+    }:
+        raise MonitorStateError("Monitor pending alert is invalid.")
+    if (
+        value["event"] != PENDING_ALERT_EVENT
+        or not _is_exact_int(value["webhook_version"])
+        or value["webhook_version"] != PENDING_ALERT_WEBHOOK_VERSION
+        or not isinstance(value["delivery_id"], str)
+        or _DELIVERY_ID.fullmatch(value["delivery_id"]) is None
+        or not _is_exact_int(value["attempts"])
+        or not 0 <= value["attempts"] <= MAX_PENDING_ALERT_ATTEMPTS
+        or not _is_exact_int(value["next_attempt_at"])
+        or not 0 <= value["next_attempt_at"] <= MAX_UNIX_TIME
+    ):
+        raise MonitorStateError("Monitor pending alert is invalid.")
+    return {name: value[name] for name in sorted(value)}
+
+
 def _validate_state(
     document: Any,
     crypto: MonitorCrypto,
@@ -610,9 +663,12 @@ def _validate_state(
     version = document.get("version")
     if version == 1 and _is_exact_int(version):
         raise LegacyMonitorStateError("Version-1 monitor state is incompatible.")
-    if not _is_exact_int(version) or version != STATE_VERSION:
+    if not _is_exact_int(version) or version not in {
+        MIGRATABLE_STATE_VERSION,
+        STATE_VERSION,
+    }:
         raise UnsupportedMonitorStateError("Monitor state version is unsupported.")
-    if set(document) != {
+    expected_fields = {
         "authentication",
         "construction",
         "key_id",
@@ -620,7 +676,10 @@ def _validate_state(
         "scope_token",
         "totals",
         "version",
-    }:
+    }
+    if version == STATE_VERSION:
+        expected_fields.add("pending_alert")
+    if set(document) != expected_fields:
         raise MonitorStateError("Monitor state fields are invalid.")
     if document["construction"] != CONSTRUCTION_ID:
         raise MonitorKeyMismatchError("Monitor construction does not match state.")
@@ -676,6 +735,9 @@ def _validate_state(
     if totals["records"] != len(records) or totals["findings"] != finding_total:
         raise MonitorStateError("Monitor state totals are inconsistent.")
 
+    if version == STATE_VERSION:
+        _validate_pending_alert(document["pending_alert"])
+
     authentication = document["authentication"]
     if not _validate_digest(authentication):
         raise MonitorStateError("Monitor state authentication is invalid.")
@@ -690,6 +752,7 @@ def _build_state_document(
     records: Dict[str, Dict[str, Any]],
     crypto: MonitorCrypto,
     scope_token: str,
+    pending_alert: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     persisted_records: Dict[str, Dict[str, Any]] = {}
     finding_total = 0
@@ -716,6 +779,7 @@ def _build_state_document(
     body = {
         "construction": CONSTRUCTION_ID,
         "key_id": crypto.key_id,
+        "pending_alert": _validate_pending_alert(pending_alert),
         "records": persisted_records,
         "scope_token": scope_token,
         "totals": {"findings": finding_total, "records": len(persisted_records)},
@@ -730,9 +794,15 @@ def serialize_state(
     records: Dict[str, Dict[str, Any]],
     crypto: MonitorCrypto,
     scope_token: str,
+    pending_alert: Optional[Dict[str, Any]] = None,
 ) -> bytes:
-    """Return the strict authenticated v2 state serialization."""
-    document = _build_state_document(records, crypto, scope_token)
+    """Return the strict authenticated version-3 state serialization."""
+    document = _build_state_document(
+        records,
+        crypto,
+        scope_token,
+        pending_alert,
+    )
     encoded = (
         json.dumps(document, indent=1, sort_keys=True, ensure_ascii=True) + "\n"
     ).encode("utf-8")
@@ -807,6 +877,7 @@ def save_state(
     crypto: MonitorCrypto,
     scope_token: str,
     *,
+    pending_alert: Optional[Dict[str, Any]] = None,
     initialize: bool = False,
 ) -> None:
     """Same-directory atomic checkpoint update or explicit no-overwrite init."""
@@ -814,7 +885,7 @@ def save_state(
         raise MonitorWriteError("Monitor state path is invalid.")
     if initialize and os.path.lexists(path):
         raise MonitorInitializationError("Monitor state already exists.")
-    encoded = serialize_state(records, crypto, scope_token)
+    encoded = serialize_state(records, crypto, scope_token, pending_alert)
     directory = os.path.dirname(os.path.abspath(path))
     tmp_path = _write_state_temp(directory, encoded)
     installed = False
@@ -839,6 +910,130 @@ def save_state(
             except OSError:
                 if not installed:
                     pass
+
+
+def _sample_unix_time(clock: Callable[[], Any]) -> int:
+    sampled = clock()
+    if isinstance(sampled, bool) or not isinstance(sampled, (int, float)):
+        raise ValueError
+    if not math.isfinite(sampled) or not 0 <= sampled <= MAX_UNIX_TIME:
+        raise ValueError
+    return int(sampled)
+
+
+def new_pending_alert(
+    *,
+    clock: Optional[Callable[[], Any]] = None,
+    delivery_id_source: Optional[Callable[[int], bytes]] = None,
+) -> Dict[str, Any]:
+    """Construct one due-now outbox entry without preparing a network request."""
+    try:
+        clock = time.time if clock is None else clock
+        delivery_id_source = (
+            secrets.token_bytes
+            if delivery_id_source is None
+            else delivery_id_source
+        )
+        delivery_bytes = delivery_id_source(16)
+        if not isinstance(delivery_bytes, bytes) or len(delivery_bytes) != 16:
+            raise ValueError
+        now = _sample_unix_time(clock)
+        if now > MAX_UNIX_TIME - WEBHOOK_RETRY_MAX_SECONDS:
+            raise ValueError
+        pending = {
+            "attempts": 0,
+            "delivery_id": delivery_bytes.hex(),
+            "event": PENDING_ALERT_EVENT,
+            "next_attempt_at": now,
+            "webhook_version": PENDING_ALERT_WEBHOOK_VERSION,
+        }
+        validated = _validate_pending_alert(pending)
+        if validated is None:
+            raise ValueError
+        return validated
+    except Exception:
+        raise WebhookPreparationError("Webhook alert preparation failed.") from None
+
+
+def pending_alert_is_due(
+    pending_alert: Dict[str, Any],
+    *,
+    clock: Optional[Callable[[], Any]] = None,
+) -> bool:
+    """Return whether one pending alert may attempt now without overflow risk."""
+    try:
+        pending = _validate_pending_alert(pending_alert)
+        if pending is None or pending["attempts"] >= MAX_PENDING_ALERT_ATTEMPTS:
+            raise ValueError
+        clock = time.time if clock is None else clock
+        now = _sample_unix_time(clock)
+        if now > MAX_UNIX_TIME - WEBHOOK_RETRY_MAX_SECONDS:
+            raise ValueError
+        return now >= pending["next_attempt_at"]
+    except Exception:
+        raise WebhookRetryError("Webhook retry cannot proceed safely.") from None
+
+
+def retry_backoff_seconds(
+    completed_attempts: int,
+    *,
+    jitter_source: Optional[Callable[[int], int]] = None,
+) -> int:
+    """Return full-jitter delay ``1..min(3600, 30*2**(n-1))`` seconds."""
+    try:
+        if (
+            not _is_exact_int(completed_attempts)
+            or not 1 <= completed_attempts <= MAX_PENDING_ALERT_ATTEMPTS
+        ):
+            raise ValueError
+        growth_steps = min(
+            completed_attempts - 1,
+            WEBHOOK_RETRY_MAX_SECONDS.bit_length(),
+        )
+        envelope = min(
+            WEBHOOK_RETRY_MAX_SECONDS,
+            WEBHOOK_RETRY_BASE_SECONDS * (1 << growth_steps),
+        )
+        jitter_source = secrets.randbelow if jitter_source is None else jitter_source
+        jitter = jitter_source(envelope)
+        if not _is_exact_int(jitter) or not 0 <= jitter < envelope:
+            raise ValueError
+        return 1 + jitter
+    except Exception:
+        raise WebhookRetryError("Webhook retry cannot proceed safely.") from None
+
+
+def advance_pending_alert(
+    pending_alert: Dict[str, Any],
+    *,
+    clock: Optional[Callable[[], Any]] = None,
+    jitter_source: Optional[Callable[[int], int]] = None,
+) -> Dict[str, Any]:
+    """Record one completed failed attempt and its bounded next-attempt time."""
+    try:
+        pending = _validate_pending_alert(pending_alert)
+        if pending is None or pending["attempts"] >= MAX_PENDING_ALERT_ATTEMPTS:
+            raise ValueError
+        attempts = pending["attempts"] + 1
+        clock = time.time if clock is None else clock
+        now = _sample_unix_time(clock)
+        if now > MAX_UNIX_TIME - WEBHOOK_RETRY_MAX_SECONDS:
+            raise ValueError
+        delay = retry_backoff_seconds(
+            attempts,
+            jitter_source=jitter_source,
+        )
+        updated = dict(pending)
+        updated["attempts"] = attempts
+        updated["next_attempt_at"] = now + delay
+        validated = _validate_pending_alert(updated)
+        if validated is None:
+            raise ValueError
+        return validated
+    except WebhookRetryError:
+        raise
+    except Exception:
+        raise WebhookRetryError("Webhook retry cannot proceed safely.") from None
 
 
 def generate_webhook_secret_file(path: str) -> str:
@@ -1076,12 +1271,12 @@ def _target_is_consistent(target: Any) -> bool:
 
 
 def build_webhook_body() -> bytes:
-    """Return the one canonical immutable 60-byte version-1 event body."""
+    """Return the one canonical immutable 60-byte version-2 event body."""
     try:
         encoded = json.dumps(
             {
-                "event": "ragleakguard.monitor.exposure-change",
-                "version": 1,
+                "event": PENDING_ALERT_EVENT,
+                "version": PENDING_ALERT_WEBHOOK_VERSION,
             },
             ensure_ascii=True,
             sort_keys=True,
@@ -1126,7 +1321,7 @@ def build_webhook_signing_bytes(
     headers: Mapping[str, str],
     body: bytes,
 ) -> bytes:
-    """Frame the exact version-1 signed fields in their public order."""
+    """Frame the exact version-2 signed fields in their public order."""
     try:
         if method != WEBHOOK_METHOD or not isinstance(headers, Mapping):
             raise ValueError
@@ -1148,6 +1343,10 @@ def build_webhook_signing_bytes(
                 _header_ascii(headers, "X-RAGLeakGuard-Webhook-Version"),
             ),
             ("key-id", _header_ascii(headers, "X-RAGLeakGuard-Key-Id")),
+            (
+                "delivery-id",
+                _header_ascii(headers, "X-RAGLeakGuard-Delivery-Id"),
+            ),
             ("timestamp", _header_ascii(headers, "X-RAGLeakGuard-Timestamp")),
             ("nonce", _header_ascii(headers, "X-RAGLeakGuard-Nonce")),
             ("body", body),
@@ -1172,7 +1371,7 @@ def _sign_webhook(
         headers,
         body,
     )
-    return "v1=" + hmac.new(
+    return "v2=" + hmac.new(
         secret._material, signing_bytes, hashlib.sha256
     ).hexdigest()
 
@@ -1181,24 +1380,25 @@ def prepare_webhook_request(
     alert_trigger: bool,
     target: WebhookTarget,
     secret: WebhookSecret,
+    delivery_id: str,
     *,
     clock: Optional[Callable[[], Any]] = None,
     nonce_source: Optional[Callable[[int], bytes]] = None,
 ) -> PreparedWebhook:
-    """Build and sign the fixed alert before any checkpoint replacement."""
+    """Build and sign one fresh attempt for an already-durable alert."""
     try:
         if alert_trigger is not True:
             raise ValueError
-        if not _target_is_consistent(target) or not isinstance(secret, WebhookSecret):
+        if (
+            not _target_is_consistent(target)
+            or not isinstance(secret, WebhookSecret)
+            or not isinstance(delivery_id, str)
+            or _DELIVERY_ID.fullmatch(delivery_id) is None
+        ):
             raise ValueError
         clock = time.time if clock is None else clock
         nonce_source = secrets.token_bytes if nonce_source is None else nonce_source
-        sampled = clock()
-        if isinstance(sampled, bool) or not isinstance(sampled, (int, float)):
-            raise ValueError
-        if not math.isfinite(sampled) or sampled < 0:
-            raise ValueError
-        timestamp = str(int(sampled))
+        timestamp = str(_sample_unix_time(clock))
         if not _WEBHOOK_TIMESTAMP.fullmatch(timestamp):
             raise ValueError
         nonce_bytes = nonce_source(16)
@@ -1213,6 +1413,7 @@ def prepare_webhook_request(
             "User-Agent": WEBHOOK_USER_AGENT,
             "X-RAGLeakGuard-Webhook-Version": WEBHOOK_VERSION,
             "X-RAGLeakGuard-Key-Id": secret.key_id,
+            "X-RAGLeakGuard-Delivery-Id": delivery_id,
             "X-RAGLeakGuard-Timestamp": timestamp,
             "X-RAGLeakGuard-Nonce": nonce,
         }
@@ -1284,6 +1485,35 @@ class WebhookReplayCache:
             return True
 
 
+class WebhookMemoryDeliveryStore:
+    """Process-local reference implementation of the atomic delivery interface.
+
+    Production receivers need a durable implementation shared by all nodes.
+    """
+
+    def __init__(self) -> None:
+        self._accepted = set()
+        self._lock = threading.Lock()
+
+    def __repr__(self) -> str:
+        return "WebhookMemoryDeliveryStore(<redacted>)"
+
+    def process_once(
+        self,
+        key_id: str,
+        delivery_id: str,
+        processor: Callable[[], Any],
+    ) -> bool:
+        """Atomically run ``processor`` for a new ID; return false for duplicate."""
+        with self._lock:
+            delivery_key = (key_id, delivery_id)
+            if delivery_key in self._accepted:
+                return False
+            processor()
+            self._accepted.add(delivery_key)
+            return True
+
+
 def verify_webhook_request(
     *,
     method: str,
@@ -1294,8 +1524,10 @@ def verify_webhook_request(
     secrets_by_key_id: Mapping[str, Any],
     receiver_now: int,
     replay_cache: Any,
-) -> bool:
-    """Authenticate, freshness-check, and replay-check a received v1 request."""
+    delivery_store: Any,
+    process_event: Callable[[], Any],
+) -> WebhookVerificationResult:
+    """Verify v2, then process or acknowledge one authenticated delivery ID."""
     try:
         received = _received_headers(headers)
         if method != WEBHOOK_METHOD or received["Host"] != authority:
@@ -1311,11 +1543,13 @@ def verify_webhook_request(
         ):
             raise ValueError
         key_id = received["X-RAGLeakGuard-Key-Id"]
+        delivery_id = received["X-RAGLeakGuard-Delivery-Id"]
         timestamp_text = received["X-RAGLeakGuard-Timestamp"]
         nonce = received["X-RAGLeakGuard-Nonce"]
         signature = received["X-RAGLeakGuard-Signature"]
         if (
             not _KEY_ID.fullmatch(key_id)
+            or not _DELIVERY_ID.fullmatch(delivery_id)
             or not _WEBHOOK_TIMESTAMP.fullmatch(timestamp_text)
             or not _KEY_ID.fullmatch(nonce)
             or not _WEBHOOK_SIGNATURE.fullmatch(signature)
@@ -1335,7 +1569,7 @@ def verify_webhook_request(
         signing_bytes = build_webhook_signing_bytes(
             method, authority, request_target, received, body
         )
-        expected = "v1=" + hmac.new(material, signing_bytes, hashlib.sha256).hexdigest()
+        expected = "v2=" + hmac.new(material, signing_bytes, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(signature, expected):
             raise ValueError
 
@@ -1349,7 +1583,13 @@ def verify_webhook_request(
             raise ValueError
         if not accept_nonce(key_id, nonce, timestamp, receiver_now):
             raise ValueError
-        return True
+        process_once = getattr(delivery_store, "process_once", None)
+        if not callable(process_once) or not callable(process_event):
+            raise ValueError
+        processed = process_once(key_id, delivery_id, process_event)
+        if not isinstance(processed, bool):
+            raise ValueError
+        return WebhookVerificationResult(duplicate=not processed)
     except Exception:
         raise WebhookVerificationError(
             "Webhook request verification failed."
@@ -1440,6 +1680,9 @@ def _validate_prepared_request(prepared: PreparedWebhook) -> None:
         or prepared.headers["User-Agent"] != WEBHOOK_USER_AGENT
         or prepared.headers["X-RAGLeakGuard-Webhook-Version"] != WEBHOOK_VERSION
         or not _KEY_ID.fullmatch(prepared.headers["X-RAGLeakGuard-Key-Id"])
+        or not _DELIVERY_ID.fullmatch(
+            prepared.headers["X-RAGLeakGuard-Delivery-Id"]
+        )
         or not _WEBHOOK_TIMESTAMP.fullmatch(
             prepared.headers["X-RAGLeakGuard-Timestamp"]
         )

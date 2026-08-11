@@ -1,6 +1,6 @@
 # Architecture
 
-**Baseline:** implemented runtime behavior independently inspected at Git commit `d33dba52e04923d5e4912d4637ce84d19dd8884f` on 2026-08-10. This is an alpha architecture description, not a stability or production-readiness guarantee.
+**Baseline:** runtime behavior through Git commit `d33dba52e04923d5e4912d4637ce84d19dd8884f` was independently inspected on 2026-08-10. The durable-outbox additions described below are implemented in this change and remain subject to independent security review before merge. This is an alpha architecture description, not a stability or production-readiness guarantee.
 
 ## Implemented now
 
@@ -19,9 +19,9 @@ flowchart LR
     D --> E["Aggregate risk report"]
     D --> F["Keyed monitor snapshot"]
     I["Operator monitor key file"] --> F
-    F --> G["Authenticated local JSON state v2"]
-    J["Dedicated webhook secret"] --> H["Signed fixed alert"]
-    F --> H
+    F --> G["Authenticated local JSON state v3 + one pending alert"]
+    J["Dedicated protocol-v2 webhook secret"] --> H["Signed fixed alert + delivery ID"]
+    G --> H
     H --> K["HTTPS verifying receiver"]
 ```
 
@@ -55,19 +55,19 @@ Reports created before policy attribution remain legacy unversioned artifacts an
 
 Finding identity is the detector's exact type plus exact detected value. Score and position are deliberately excluded. Typed length-prefixed UTF-8 framing preserves exact code-point distinctions, and sorted repeated finding tokens give order-independent multiset behavior while retaining duplicate multiplicity. Separate labelled HMAC-SHA-256 subkeys produce full 256-bit finding tokens, aggregate fingerprints, store-scope tokens, record-correlation tokens, and state authentication. This detects equal-type/equal-count value replacement unless a residual cryptographic collision occurs.
 
-The strict version-2 JSON checkpoint persists only the construction/key identifiers, a keyed store-scope token, token-keyed records containing finding count/full aggregate fingerprint, consistency totals, and an authenticator over the canonical state body. It omits raw source/store/state paths, collection/tenant names, record IDs, document text, detected values, spans, finding types, key material, and exception text. State loading rejects duplicate/unknown fields, wrong types, out-of-bound or inconsistent counts, invalid digests, corruption/tampering, unsupported versions, key/scope mismatches, and authentication failures before source access or diffing.
+The strict version-3 JSON state retains the version-2 checkpoint and adds exactly one authenticated `pending_alert`, either `null` or a bounded object containing only the fixed event/version, a random 128-bit delivery ID, completed failed-attempt count, and next retry time. It omits webhook URL/authority, secret/key ID, attempt timestamp/nonce/signature/request bytes, raw source/store/state paths, collection/tenant names, record IDs, document text, detected values, spans, finding types/counts, response data, key material, and exception text. State loading rejects duplicate/unknown fields, wrong types, bounds/count inconsistencies, invalid digests, corruption/tampering, unsupported versions, key/scope mismatch, and authentication failure before source access.
 
-Version-1 state is rejected without rewrite because aggregate type/count data cannot be losslessly converted to finding-value history. New baseline creation uses same-directory atomic no-overwrite installation; updates write/fsync a same-directory temporary file and call atomic replacement. Tested temporary-write/replacement failures preserve the prior checkpoint and emit no success/webhook. See the complete [monitor key and state contract](MONITOR_STATE.md) for schema, cryptography, lifecycle, rotation, recovery, compatibility, and limits.
+Version-1 state remains rejected without rewrite because aggregate type/count data cannot be losslessly converted. Valid authenticated version-2 state loads as having no pending alert and migrates only on the next successful atomic state transition; migration cannot recover alerts lost under the older ordering. New baseline creation uses same-directory atomic no-overwrite installation; updates write and file-`fsync` a same-directory temporary file before atomic replacement. Failure injection covers serialization, temporary write, `fsync`, replacement, migration, retry updates, and clearing. See the [monitor state contract](MONITOR_STATE.md).
 
-The optional webhook uses a separate, strict 256-bit operator secret and emits only the fixed 60-byte version-1 body `{"event":"ragleakguard.monitor.exposure-change","version":1}`. The sender signs the exact method, normalized authority, origin-form request target, allowlisted HTTP/1.1 headers, timestamp, nonce, and immutable body using the public `RLG-WEBHOOK-HMAC-SHA256-v1` framing. The request builder receives no source, snapshot, delta list, record token, finding type/count, monitor key, state path, or exception object.
+The optional webhook uses a separate protocol-v2 256-bit operator secret and emits only the fixed 60-byte body `{"event":"ragleakguard.monitor.exposure-change","version":2}`. `RLG-WEBHOOK-HMAC-SHA256-v2` signs the exact method, normalized authority, origin-form target, ten allowlisted HTTP/1.1 headers, persisted delivery ID, fresh timestamp/nonce, and immutable body. Legacy v1 secret files/receivers fail closed; provisioning requires a new file and key ID. The request builder receives no source, snapshot, delta, record token, finding type/count, monitor key, state path, or exception object.
 
-Webhook preflight validates the HTTPS URL and dedicated secret before connector access. Alert construction and signing precede checkpoint replacement; the single network attempt follows a successful checkpoint. A raw TLS socket emits exactly the nine protocol headers, never follows redirects, performs ordinary certificate-chain/hostname verification, and applies one 10-second monotonic deadline across DNS, connection, TLS handshake, request writes, and response headers. It reads response headers one byte at a time through the terminator so response-body bytes are not consumed, then accepts only `200..299`.
+Webhook preflight validates the HTTPS URL and v2 secret before connector access. For new exposure, the checkpoint and pending alert are authenticated and atomically replaced before any attempt timestamp, nonce, signature, or request is constructed. A pending alert blocks source access and newer scans. Each due invocation makes at most one attempt using the stable delivery ID and fresh attempt fields. A raw TLS socket never follows redirects, performs ordinary certificate/hostname verification, applies one 10-second monotonic DNS-to-response-header deadline, consumes no response body, and accepts only `200..299`.
 
-The public [webhook protocol](WEBHOOK_PROTOCOL.md) includes the test vector and a receiver verifier contract. The included helper authenticates first, applies the inclusive 300-second freshness window, and atomically records `(key_id, nonce)` in a process-local cache. HMAC is authenticity/integrity, not confidentiality or replay prevention by itself. Delivery remains non-durable: there is no outbox, retry/backoff, idempotency guarantee, dead-letter state, crash recovery, or multi-destination routing.
+Failed attempts retain the same delivery ID and atomically advance a non-zero, CSPRNG full-jitter exponential retry schedule capped at 3600 seconds. No attempt/age rule discards the alert. Accepted `2xx` permits atomic clear; failed clear is ambiguous and can duplicate a later attempt. The [protocol](WEBHOOK_PROTOCOL.md) publishes the exact v2 vector and receiver order: authenticate, freshness, atomic nonce replay rejection, then a durable atomic delivery-ID store that processes unseen IDs and returns duplicate success without reprocessing. The included memory store is test-only. This is not exactly-once delivery; one pending alert, one destination, and no dead-letter administration are implemented.
 
 ### CLI and failure behavior
 
-[cli.py](../src/ragleakguard/cli.py) provides Typer commands and writes operator messages to the console. Unsupported sources, missing required Chroma paths, malformed or unsupported locales, and an orphan `--webhook-secret-file` exit 2. If detection dependencies or the required spaCy model cannot load, commands exit 3. Monitor key/state, compatibility, fingerprint, and checkpoint failures exit 4. Webhook configuration, secret loading, preparation, transport, redirect, and response failures exit 5 with static messages. Locale/detection and webhook preflight, followed by monitor key/state authentication, complete before source access. Unsigned webhook configuration is rejected. Only an accepted `2xx` prints `Webhook alert delivered.`
+[cli.py](../src/ragleakguard/cli.py) provides Typer commands and static operator messages for the monitor security paths. Usage/locale errors exit 2; detection-runtime failures exit 3; monitor key/state, retry-metadata, and accepted-but-not-cleared failures exit 4; pending/backoff and webhook configuration/preparation/transport/response failures exit 5. A recovered pending alert that is accepted and durably cleared exits 0 without scanning. A current scan with new/changed exposure exits 1 after its required local transition. No webhook acceptance line appears before accepted `2xx` and successful local clear, and it explicitly disclaims downstream processing.
 
 ## Trust boundaries
 
@@ -76,13 +76,13 @@ The public [webhook protocol](WEBHOOK_PROTOCOL.md) includes the test vector and 
 - The report path and monitor state are local persistent outputs controlled by the operator.
 - The operator monitor key file is a local secret input; its permissions, backup, recovery, rotation, retirement, and scheduled-job access are operator trust boundaries.
 - The dedicated webhook secret is a distinct local secret input shared separately with a verifying receiver; it must never be derived from or substituted for the monitor key.
-- The HTTPS receiver, TLS endpoint, receiver clock, key-ID mapping, atomic nonce cache, logs, and downstream adapters are separate trust boundaries. The fixed event discloses only that an exposure change occurred, while the endpoint remains observable to network infrastructure.
+- The HTTPS receiver, TLS endpoint, receiver clock, key-ID mapping, atomic nonce cache, durable atomic delivery-ID store, processor transaction, logs, and downstream adapters are separate trust boundaries. The fixed event discloses only that an exposure change occurred, while public delivery metadata and the endpoint remain observable to network infrastructure.
 - Package indexes, dependency downloads, the spaCy model download, and source-control/release systems are supply-chain boundaries.
 
 See the [threat model](THREAT_MODEL.md) for assets, abuse cases, and residual risks.
 
 ## Planned, not implemented
 
-The public [roadmap](../ROADMAP.md) tracks possible additional locales, connectors, file scanning, integrations, HTML/compliance reporting, and future Prevent/Fix and Prove stages. Remaining Phase 0 hardening plans include bounded connectors, durable alert delivery, packaged demos, and reproducible releases.
+The public [roadmap](../ROADMAP.md) tracks possible additional locales, connectors, file scanning, integrations, HTML/compliance reporting, and future Prevent/Fix and Prove stages. Remaining hardening plans include bounded connectors, outbox administration/multiple destinations, packaged demos, and reproducible releases.
 
 No Prevent/Fix vault, erasure mechanism, signed proof, multi-tenant Control Plane, certification, or hosted service is implemented in this repository.
