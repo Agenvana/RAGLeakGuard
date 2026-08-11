@@ -71,31 +71,31 @@ ragleakguard scan --source chroma --path ./sample_store --locale au --report rep
 # 產生本機 256-bit 監控金鑰；絕不覆寫既有路徑
 ragleakguard generate-monitor-key --output rlg-monitor-key.json
 
-# 產生另一把專用的 256-bit webhook 簽署密鑰；透過受控管的獨立管道
-# 提供給驗證端，絕不可重用監控金鑰
+# 產生新的 protocol-v2 webhook 密鑰；先把新的 key ID 與密鑰配置到
+# 每個 receiver 節點，再讓 sender 指向此新檔案
 ragleakguard generate-webhook-secret --output rlg-webhook-secret.json
 
-# 明確授權建立新的、已驗證的 version-2 基準線
+# 明確授權建立新的、已驗證的 version-3 基準線
 ragleakguard monitor --source chroma --path ./sample_store --locale au \
   --key-file rlg-monitor-key.json --state rlg-state.json --initialize
 
-# 之後的執行會與基準線比對，對「新增」或「變更」的暴露發出最小化且已簽署的警報；
-# 接收端必須驗證 RAGLeakGuard webhook 協定
+# 之後的執行會先以原子方式提交單一項目的 outbox，再嘗試最小化且已簽署的警報；
+# receiver 必須驗證 protocol v2，並以 durable 方式去除重複 delivery ID
 ragleakguard monitor --source chroma --path ./sample_store --locale au \
   --key-file rlg-monitor-key.json --state rlg-state.json \
   --webhook https://receiver.example.com/rlg \
   --webhook-secret-file rlg-webhook-secret.json
 
-# 排入 cron（每小時）：exit 1 = 偵測到暴露且收到可接受的 2xx；exit 5 =
+# 排入 cron（每小時）：exit 1 = 本次掃描發現暴露變更；exit 5 = pending/backoff、
 # webhook 設定、建構、傳輸、重新導向或回應失敗
 0 * * * *  ragleakguard monitor --source chroma --path /srv/store --key-file /etc/rlg/monitor-key.json --state /var/lib/rlg/state.json --webhook https://receiver.example.com/rlg --webhook-secret-file /etc/rlg/webhook-secret.json
 ```
 
-已驗證的狀態檔只包含完整長度、以金鑰產生的範圍／紀錄 token、發現層級指紋與驗證計數；不包含原始路徑、collection 名稱、紀錄 ID、文件文字、偵測值、span 或金鑰材料。Version 1 因缺少發現值歷史而會在不修改檔案的情況下被拒絕。缺少、無效、不相符或未通過驗證的金鑰／狀態會以 exit code 4 結束，且不進行 diff、不輸出成功訊息、不傳送 webhook。建立基準線必須使用 `--initialize`，且不會覆寫既有路徑。
+已驗證的 version-3 狀態檔包含完整長度、以金鑰產生的範圍／紀錄 token、發現層級指紋、驗證計數，以及 `pending_alert: null` 或一個有界且最小化的 outbox 項目。該項目只含固定 event/version、隨機 128-bit delivery ID、已完成失敗嘗試次數與下次重試時間；不含 URL、key ID、密鑰、signature、來源／store 路徑、finding、count、response 或 exception。Version 1 仍會在不修改檔案的情況下被拒絕。有效且已驗證的 version-2 狀態會被視為沒有 pending alert，並只在下一次成功的原子狀態轉換時移轉；這無法復原 version 2 時期已遺失的警報。缺少、無效、不相符或未通過驗證的金鑰／狀態會在來源存取前以 exit code 4 結束。建立基準線必須使用 `--initialize`，且不會覆寫既有路徑。
 
-Webhook 的 version-1 本體固定為同一個 60-byte 暴露變更事件，不含來源／store 路徑、record token、發現類型／數量、文件資料或安裝識別碼。精確 URL target、本體與允許的 HTTP/1.1 headers 會以專用密鑰簽署；HTTPS 憑證鏈與主機名稱驗證不可停用、絕不跟隨重新導向，且 DNS、連線、TLS、傳送與回應 headers 共用一個 10 秒 monotonic deadline。未提供 `--webhook-secret-file` 的舊式 unsigned `--webhook` 會刻意被拒絕。Slack／Discord incoming webhook 不相容；Zapier、n8n 或其他下游服務必須先經過能驗證此協定的 receiver／gateway。
+Webhook 本體固定為同一個 60-byte protocol-v2 暴露變更事件。嚴格的 header allowlist 新增 persisted delivery ID；v2 signature 同時驗證該 ID、精確 URL target、本體、timestamp 與每次重新產生的 nonce。HTTPS 憑證鏈與主機名稱驗證不可停用、絕不跟隨重新導向，且 DNS、連線、TLS、傳送與回應 headers 共用一個 10 秒 monotonic deadline。Unsigned 設定及舊式 v1 密鑰檔／receiver 會 fail closed，不會自動 downgrade。Slack／Discord incoming webhook 不相容；Zapier、n8n 或其他下游服務必須先經過能驗證並 durable deduplicate 此協定的 receiver／gateway。
 
-Webhook delivery 仍不具 durable 保證。程式會先推進 checkpoint，再進行唯一一次網路傳送；因此傳輸失敗會以 exit 5 結束，但下一次執行可能無法重建該警報。傳送或回應失敗也無法證明接收端未接受該請求。本工作套件沒有 retry、outbox、dead-letter，亦不保證 exactly-once 或 at-least-once。`2xx` 只表示收到符合契約的回應 headers，不證明下游處理完成。驗證、replay cache、密鑰生命週期、相容性與殘餘風險請見 [webhook 協定](docs/WEBHOOK_PROTOCOL.md)與[監控金鑰與狀態契約](docs/MONITOR_STATE.md)（英文）。
+只要 alert 仍 pending，後續執行就不會存取來源。到期的執行最多嘗試一次，沿用同一 delivery ID，並重新產生 timestamp、nonce 與 signature。失敗會以有界 exponential full-jitter backoff 保留；不會因年齡或嘗試次數而默默丟棄。只有可接受的 `2xx` response headers 才允許原子清除本機 pending alert；清除失敗屬於 ambiguous delivery，之後可能重複傳送。Receiver 必須使用 durable、atomic deduplication，但這不證明 exactly-once processing、無條件 at-least-once delivery、下游處理或人員通知。此版本只支援單一 destination 與單一 pending alert；receiver outage 可無限期阻擋後續掃描，且沒有 dead-letter 管理。移轉、cutover、retry、復原與殘餘風險請見 [webhook 協定](docs/WEBHOOK_PROTOCOL.md)與[監控金鑰與狀態契約](docs/MONITOR_STATE.md)（英文）。
 
 ## 偵測能力
 

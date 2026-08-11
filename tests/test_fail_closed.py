@@ -1,4 +1,4 @@
-"""Fail-closed locale, detection-runtime, and monitor-state regression tests."""
+"""Fail-closed locale, runtime, state-v3 outbox, and webhook-v2 tests."""
 import json
 import re
 from pathlib import Path
@@ -21,6 +21,7 @@ SUCCESS_SIGNALS = (
     "baseline initialized",
     "No new exposure",
     "Webhook alert delivered",
+    "Webhook response accepted",
     "✓",
 )
 SYNTHETIC_ITEM = {
@@ -338,6 +339,28 @@ def _prepare_valid_monitor_state(tmp_path, findings=None):
     return key_path, state_path, state_path.read_bytes()
 
 
+def _prepare_pending_monitor_state(tmp_path, *, next_attempt_at=0, attempts=0):
+    key_path, state_path, _ = _prepare_valid_monitor_state(tmp_path)
+    crypto = monitoring.MonitorCrypto(monitoring.load_key_file(str(key_path)))
+    scope = crypto.scope_token("chroma", str(tmp_path / PATH_CANARY))
+    loaded = monitoring.load_state(str(state_path), crypto, scope)
+    pending = {
+        "attempts": attempts,
+        "delivery_id": "ab" * 16,
+        "event": monitoring.PENDING_ALERT_EVENT,
+        "next_attempt_at": next_attempt_at,
+        "webhook_version": monitoring.PENDING_ALERT_WEBHOOK_VERSION,
+    }
+    monitoring.save_state(
+        str(state_path),
+        loaded["records"],
+        crypto,
+        scope,
+        pending_alert=pending,
+    )
+    return key_path, state_path, state_path.read_bytes(), pending
+
+
 def test_monitor_missing_or_malformed_key_fails_before_source_and_preserves_state(
     monkeypatch, tmp_path
 ):
@@ -370,7 +393,7 @@ def test_monitor_missing_or_malformed_key_fails_before_source_and_preserves_stat
     [
         (b'{"version":1,"records":{}}', "Version-1 monitor state"),
         (b'{"version":1', "Monitor state is invalid"),
-        (b'{"version":3,"records":{}}', "Monitor state is invalid"),
+        (b'{"version":4,"records":{}}', "Monitor state is invalid"),
         (b"privacy-canary-that-must-not-be-printed", "Monitor state is invalid"),
     ],
     ids=["v1", "truncated-v1", "unsupported-version", "malformed-json"],
@@ -590,6 +613,170 @@ def test_webhook_option_pair_fails_closed_before_source_access(
     _assert_private_failure(result)
 
 
+def test_pending_alert_without_v2_webhook_configuration_blocks_source(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    _, state, before, _ = _prepare_pending_monitor_state(tmp_path)
+    args, _ = _command_args("monitor", tmp_path)
+    calls = []
+    monkeypatch.setattr(
+        monitoring, "post_webhook", lambda *args: calls.append("transport")
+    )
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == cli.EXIT_WEBHOOK
+    assert state.read_bytes() == before
+    assert not source_calls
+    assert not calls
+    assert "webhook alert is pending" in result.output.lower()
+    _assert_private_failure(result)
+
+
+def test_pending_alert_backoff_blocks_source_and_network(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    _, state, before, _ = _prepare_pending_monitor_state(
+        tmp_path, next_attempt_at=2_000_000_100
+    )
+    args, _ = _command_args("monitor", tmp_path)
+    _add_webhook_pair(args, tmp_path)
+    monkeypatch.setattr(monitoring.time, "time", lambda: 2_000_000_000)
+    calls = []
+    monkeypatch.setattr(
+        monitoring, "prepare_webhook_request", lambda *args: calls.append("prepare")
+    )
+    monkeypatch.setattr(
+        monitoring, "post_webhook", lambda *args: calls.append("transport")
+    )
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == cli.EXIT_WEBHOOK
+    assert state.read_bytes() == before
+    assert not source_calls
+    assert not calls
+    assert "backoff has not elapsed" in result.output
+    _assert_private_failure(result)
+
+
+def test_pending_retries_reuse_delivery_id_with_fresh_attempt_fields(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    _, state, _, pending = _prepare_pending_monitor_state(tmp_path)
+    args, _ = _command_args("monitor", tmp_path)
+    _add_webhook_pair(args, tmp_path)
+
+    ticks = iter([100, 101, 103, 104])
+    nonces = iter([b"1" * 16, b"2" * 16])
+    monkeypatch.setattr(monitoring.time, "time", lambda: next(ticks))
+    monkeypatch.setattr(monitoring.secrets, "token_bytes", lambda size: next(nonces))
+    real_advance = monitoring.advance_pending_alert
+    monkeypatch.setattr(
+        monitoring,
+        "advance_pending_alert",
+        lambda value: real_advance(
+            value,
+            clock=lambda: 102,
+            jitter_source=lambda envelope: 0,
+        ),
+    )
+    attempts = []
+
+    def post(prepared):
+        attempts.append(dict(prepared.headers))
+        if len(attempts) == 1:
+            raise monitoring.WebhookTransportError(PRIVACY_CANARY)
+        return 204
+
+    monkeypatch.setattr(monitoring, "post_webhook", post)
+
+    first = CliRunner().invoke(cli.app, args)
+    retained = json.loads(state.read_text(encoding="utf-8"))["pending_alert"]
+    second = CliRunner().invoke(cli.app, args)
+    cleared = json.loads(state.read_text(encoding="utf-8"))["pending_alert"]
+
+    assert first.exit_code == cli.EXIT_WEBHOOK
+    assert retained["attempts"] == 1
+    assert retained["next_attempt_at"] == 103
+    assert second.exit_code == 0
+    assert cleared is None
+    assert not source_calls
+    assert [item["X-RAGLeakGuard-Delivery-Id"] for item in attempts] == [
+        pending["delivery_id"],
+        pending["delivery_id"],
+    ]
+    assert attempts[0]["X-RAGLeakGuard-Nonce"] != attempts[1]["X-RAGLeakGuard-Nonce"]
+    assert attempts[0]["X-RAGLeakGuard-Timestamp"] != attempts[1]["X-RAGLeakGuard-Timestamp"]
+    assert attempts[0]["X-RAGLeakGuard-Signature"] != attempts[1]["X-RAGLeakGuard-Signature"]
+    assert "pending alert cleared" in second.output
+
+
+def test_accepted_response_clear_failure_is_ambiguous_and_retains_pending(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    _, state, before, _ = _prepare_pending_monitor_state(tmp_path)
+    args, _ = _command_args("monitor", tmp_path)
+    _add_webhook_pair(args, tmp_path)
+    monkeypatch.setattr(monitoring.time, "time", lambda: 100)
+    monkeypatch.setattr(monitoring, "post_webhook", lambda prepared: 204)
+    real_save = monitoring.save_state
+
+    def fail_clear(*save_args, **save_kwargs):
+        if save_kwargs.get("pending_alert", "missing") is None:
+            raise monitoring.MonitorWriteError(PRIVACY_CANARY)
+        return real_save(*save_args, **save_kwargs)
+
+    monkeypatch.setattr(monitoring, "save_state", fail_clear)
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == cli.EXIT_MONITOR_STATE
+    assert state.read_bytes() == before
+    assert not source_calls
+    assert "delivery is ambiguous" in result.output
+    assert "Webhook response accepted" not in result.output
+    _assert_private_failure(result)
+
+
+def test_retry_metadata_write_failure_preserves_prior_pending_and_exits_four(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    _, state, before, _ = _prepare_pending_monitor_state(tmp_path)
+    args, _ = _command_args("monitor", tmp_path)
+    _add_webhook_pair(args, tmp_path)
+    monkeypatch.setattr(monitoring.time, "time", lambda: 100)
+    monkeypatch.setattr(
+        monitoring,
+        "post_webhook",
+        lambda prepared: (_ for _ in ()).throw(
+            monitoring.WebhookTransportError(PRIVACY_CANARY)
+        ),
+    )
+    monkeypatch.setattr(
+        monitoring,
+        "save_state",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            monitoring.MonitorWriteError(PRIVACY_CANARY)
+        ),
+    )
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == cli.EXIT_MONITOR_STATE
+    assert state.read_bytes() == before
+    assert not source_calls
+    assert "retry checkpoint failed" in result.output.lower()
+    _assert_private_failure(result)
+
+
 @pytest.mark.parametrize(
     "mode",
     ["invalid-url", "missing-secret", "malformed-secret", "monitor-key-as-secret"],
@@ -645,7 +832,7 @@ def test_generate_webhook_secret_cli_is_private_and_refuses_overwrite(tmp_path):
     assert secret_path.read_bytes() == before
 
 
-def test_webhook_preparation_checkpoint_transport_order_and_private_success(
+def test_pending_checkpoint_precedes_request_preparation_and_private_success(
     monkeypatch, tmp_path
 ):
     finding = {"type": "EMAIL_ADDRESS", "text": "detected-value-canary"}
@@ -661,15 +848,21 @@ def test_webhook_preparation_checkpoint_transport_order_and_private_success(
         args, tmp_path, "https://receiver.example.test/url-query-canary?private=yes"
     )
     events = []
+    real_new_pending = monitoring.new_pending_alert
     real_prepare = monitoring.prepare_webhook_request
     real_save = monitoring.save_state
+
+    def new_pending(*pending_args, **pending_kwargs):
+        events.append("pending-construction")
+        return real_new_pending(*pending_args, **pending_kwargs)
 
     def prepare(*prepare_args, **prepare_kwargs):
         events.append("prepare")
         return real_prepare(*prepare_args, **prepare_kwargs)
 
     def save(*save_args, **save_kwargs):
-        events.append("checkpoint")
+        pending = save_kwargs.get("pending_alert")
+        events.append("checkpoint-pending" if pending is not None else "checkpoint-clear")
         return real_save(*save_args, **save_kwargs)
 
     def post(prepared):
@@ -678,6 +871,7 @@ def test_webhook_preparation_checkpoint_transport_order_and_private_success(
         assert set(prepared.headers) == monitoring.WEBHOOK_HEADER_ALLOWLIST
         return 204
 
+    monkeypatch.setattr(monitoring, "new_pending_alert", new_pending)
     monkeypatch.setattr(monitoring, "prepare_webhook_request", prepare)
     monkeypatch.setattr(monitoring, "save_state", save)
     monkeypatch.setattr(monitoring, "post_webhook", post)
@@ -685,10 +879,17 @@ def test_webhook_preparation_checkpoint_transport_order_and_private_success(
     result = CliRunner().invoke(cli.app, args)
 
     assert result.exit_code == 1
-    assert events == ["prepare", "checkpoint", "transport"]
+    assert events == [
+        "pending-construction",
+        "checkpoint-pending",
+        "prepare",
+        "transport",
+        "checkpoint-clear",
+    ]
     assert state.read_bytes() != before
+    assert json.loads(state.read_text(encoding="utf-8"))["pending_alert"] is None
     assert "Exposure change detected." in result.output
-    assert "Webhook alert delivered." in result.output
+    assert "Webhook response accepted; pending alert cleared." in result.output
     for canary in (
         "detected-value-canary",
         "record-id-canary",
@@ -700,7 +901,7 @@ def test_webhook_preparation_checkpoint_transport_order_and_private_success(
         assert canary not in result.output
 
 
-def test_webhook_preparation_failure_preserves_checkpoint_and_sends_nothing(
+def test_webhook_preparation_failure_retains_durable_pending_and_sends_nothing(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
@@ -730,13 +931,89 @@ def test_webhook_preparation_failure_preserves_checkpoint_and_sends_nothing(
     result = CliRunner().invoke(cli.app, args)
 
     assert result.exit_code == cli.EXIT_WEBHOOK
-    assert state.read_bytes() == before
+    assert state.read_bytes() != before
+    persisted = json.loads(state.read_text(encoding="utf-8"))
+    assert persisted["pending_alert"] is not None
+    assert persisted["pending_alert"]["attempts"] == 0
     assert not transport_calls
     assert "Webhook alert preparation failed" in result.output
     _assert_private_failure(result)
 
 
-def test_checkpoint_failure_after_signing_sends_nothing_and_preserves_prior(
+def test_abrupt_interruption_after_pending_commit_leaves_recoverable_alert(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    monkeypatch.setattr(
+        detection,
+        "detect",
+        lambda text, locale=None: [
+            {"type": "EMAIL_ADDRESS", "text": "detected-value-canary"}
+        ],
+    )
+    _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    _, state, before = _prepare_valid_monitor_state(tmp_path)
+    args, _ = _command_args("monitor", tmp_path)
+    _add_webhook_pair(args, tmp_path)
+    transport_calls = []
+    monkeypatch.setattr(
+        monitoring,
+        "prepare_webhook_request",
+        lambda *args, **kwargs: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+    monkeypatch.setattr(
+        monitoring, "post_webhook", lambda *args: transport_calls.append(args)
+    )
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == 130
+    assert isinstance(result.exception, SystemExit)
+    assert state.read_bytes() != before
+    assert json.loads(state.read_text(encoding="utf-8"))["pending_alert"] is not None
+    assert not transport_calls
+    assert not any(signal in result.output for signal in SUCCESS_SIGNALS)
+
+
+def test_pending_construction_failure_sends_nothing_and_preserves_prior(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    monkeypatch.setattr(
+        detection,
+        "detect",
+        lambda text, locale=None: [
+            {"type": "EMAIL_ADDRESS", "text": "detected-value-canary"}
+        ],
+    )
+    _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    _, state, before = _prepare_valid_monitor_state(tmp_path)
+    args, _ = _command_args("monitor", tmp_path)
+    _add_webhook_pair(args, tmp_path)
+    calls = []
+    monkeypatch.setattr(
+        monitoring,
+        "new_pending_alert",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            monitoring.WebhookPreparationError(PRIVACY_CANARY)
+        ),
+    )
+    monkeypatch.setattr(
+        monitoring, "prepare_webhook_request", lambda *args: calls.append("prepare")
+    )
+    monkeypatch.setattr(
+        monitoring, "post_webhook", lambda *args: calls.append("transport")
+    )
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == cli.EXIT_WEBHOOK
+    assert state.read_bytes() == before
+    assert not calls
+    _assert_private_failure(result)
+
+
+def test_pending_checkpoint_failure_sends_nothing_and_preserves_prior(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
@@ -752,13 +1029,6 @@ def test_checkpoint_failure_after_signing_sends_nothing_and_preserves_prior(
     args, _ = _command_args("monitor", tmp_path)
     _add_webhook_pair(args, tmp_path)
     events = []
-    real_prepare = monitoring.prepare_webhook_request
-
-    def prepared(*prepare_args, **prepare_kwargs):
-        events.append("prepare")
-        return real_prepare(*prepare_args, **prepare_kwargs)
-
-    monkeypatch.setattr(monitoring, "prepare_webhook_request", prepared)
     monkeypatch.setattr(
         monitoring,
         "save_state",
@@ -773,12 +1043,12 @@ def test_checkpoint_failure_after_signing_sends_nothing_and_preserves_prior(
     result = CliRunner().invoke(cli.app, args)
 
     assert result.exit_code == cli.EXIT_MONITOR_STATE
-    assert events == ["prepare"]
+    assert events == []
     assert state.read_bytes() == before
     _assert_private_failure(result)
 
 
-def test_transport_failure_advances_checkpoint_but_claims_no_delivery(
+def test_transport_failure_retains_same_delivery_id_and_advances_backoff(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
@@ -793,22 +1063,28 @@ def test_transport_failure_advances_checkpoint_but_claims_no_delivery(
     _, state, before = _prepare_valid_monitor_state(tmp_path)
     args, _ = _command_args("monitor", tmp_path)
     _add_webhook_pair(args, tmp_path)
+    deliveries = []
+
+    def fail(prepared):
+        deliveries.append(prepared.headers["X-RAGLeakGuard-Delivery-Id"])
+        raise monitoring.WebhookTransportError(PRIVACY_CANARY)
+
+    monkeypatch.setattr(monitoring, "post_webhook", fail)
     monkeypatch.setattr(
-        monitoring,
-        "post_webhook",
-        lambda prepared: (_ for _ in ()).throw(
-            monitoring.WebhookTransportError(PRIVACY_CANARY)
-        ),
+        monitoring.secrets, "randbelow", lambda envelope: envelope - 1
     )
 
     result = CliRunner().invoke(cli.app, args)
 
     assert result.exit_code == cli.EXIT_WEBHOOK
     assert state.read_bytes() != before
+    persisted = json.loads(state.read_text(encoding="utf-8"))["pending_alert"]
+    assert persisted["attempts"] == 1
+    assert deliveries == [persisted["delivery_id"]]
     normalized = " ".join(result.output.split())
     assert "Webhook delivery failed." in normalized
-    assert "checkpoint was advanced" in normalized
-    assert "Webhook alert delivered" not in result.output
+    assert "retained for a bounded retry" in normalized
+    assert "Webhook response accepted" not in result.output
     assert "Exposure change detected" not in result.output
     _assert_private_failure(result)
 
@@ -901,6 +1177,8 @@ def test_monitor_help_documents_authenticated_https_and_breaking_exit_code():
     assert "--webhook-secret-file" in normalized
     assert "HTTPS" in normalized
     assert "authenticated" in normalized
-    assert "5 = webhook failure" in normalized
+    assert "version-3" in normalized
+    assert "protocol-v2" in normalized
+    assert "5 = webhook pending/configuration/preparation/delivery failure" in normalized
     assert "Slack" not in normalized
     assert "Discord" not in normalized

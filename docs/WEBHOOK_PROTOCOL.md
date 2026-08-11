@@ -1,78 +1,83 @@
-# Authenticated webhook protocol
+# Authenticated durable webhook protocol v2
 
-This document defines the implemented RAGLeakGuard monitor webhook version 1. It is a privacy-minimal notification that an exposure change occurred, not a finding report, durable-delivery protocol, or proof of downstream processing. The monitor-state key remains governed separately by the [monitor key and state contract](MONITOR_STATE.md).
+This document defines the implemented RAGLeakGuard monitor webhook protocol version 2. It is a deliberately incompatible privacy-minimal delivery protocol for one exposure-change event and one destination. It is not a finding report, a hosted receiver, an exactly-once guarantee, unconditional at-least-once delivery, or proof of downstream processing or human notification. The authenticated outbox is governed by the [monitor key and state contract](MONITOR_STATE.md).
 
-## Sender configuration and dedicated secret
+## Configuration and v1 cutover
 
-The two monitor options are a required pair:
+The sender options are a required pair:
 
 ```text
 --webhook HTTPS_URL --webhook-secret-file PATH
 ```
 
-`--webhook` without `--webhook-secret-file` exits 5. A secret file without a webhook exits 2. Validation occurs after source/path, locale, and detection-runtime validation but before monitor-key/state loading and before connector access. There is no unsigned mode, fallback key, literal secret option, environment fallback, derived key, monitor-key reuse, embedded default, or silent generation.
+`--webhook` without its secret exits 5. A secret without `--webhook` exits 2. URL and secret validation occur before monitor-key/state loading and before connector access. There is no unsigned mode, fallback key, literal secret option, environment fallback, monitor-key reuse, automatic generation, downgrade, dual-send, or receiver compatibility mode.
 
-Create a new secret without overwriting any path:
+Protocol v2 requires a new secret file and new key ID:
 
 ```bash
-ragleakguard generate-webhook-secret --output /etc/ragleakguard/webhook-secret.json
+ragleakguard generate-webhook-secret \
+  --output /etc/ragleakguard/webhook-secret-v2.json
 ```
 
-The JSON root has this complete allowlist; duplicate, unknown, or missing members fail:
+The strict JSON root is:
 
 | Field | Exact contract |
 |---|---|
-| `version` | Integer `1`; a Boolean is not an integer here. |
-| `purpose` | `ragleakguard.webhook-signing` |
-| `construction` | `RLG-WEBHOOK-HMAC-SHA256-v1` |
-| `key_id` | Random non-secret 128 bits encoded as 32 lowercase hexadecimal characters. It selects a receiver-side secret during rotation and must not encode an installation, tenant, store, or customer identity. |
+| `version` | Integer `2`; booleans rejected. |
+| `purpose` | `ragleakguard.webhook-signing.v2`. |
+| `construction` | `RLG-WEBHOOK-HMAC-SHA256-v2`. |
+| `key_id` | Random non-secret 128 bits as 32 lowercase hex characters. |
 | `secret` | Exactly 256 CSPRNG bits in strict canonical Base64. |
 
-Generation uses the OS CSPRNG, exclusive no-overwrite creation, file `fsync`, and POSIX mode `0600`. Loading is capped at 4096 bytes and rejects missing/unreadable paths, non-regular files, symlinks, broad POSIX permissions, invalid UTF-8, invalid or duplicate JSON, schema/type mismatches, malformed/noncanonical Base64, wrong-length material, and wrong purpose/construction/version/key ID. Failures are static and do not print paths, key IDs, secret bytes, URLs, or exception text.
+Generation uses exclusive no-overwrite creation, file `fsync`, and POSIX mode `0600`. Loading is capped at 4096 bytes and rejects non-regular paths, symlinks, broad POSIX permissions, malformed/duplicate/unknown JSON, noncanonical Base64, wrong lengths, and wrong version/purpose/construction. Failures are static and omit paths, key IDs, secret material, URLs, and exceptions. Portable Python cannot prove a restrictive Windows DACL; operators must configure it separately.
 
-Portable Python does not prove a restrictive Windows DACL. On Windows, the operator must use Windows ACL tooling such as `icacls` or `Set-Acl` to restrict the file to the sender identity and authorized administrators. This implementation does not claim to enforce or audit that DACL.
+### Required cutover sequence
 
-### Lifecycle
+1. Keep the v1 file unchanged for rollback evidence; never overwrite it.
+2. Generate a distinct v2 file with a new random key ID. Never reuse a retired key ID.
+3. Provision the new `(key_id, secret)` through a confidential channel to the receiver's protocol-v2 key mapping on every node.
+4. Deploy a receiver that enforces the exact v2 verifier, shared nonce policy, and durable delivery-ID store.
+5. Point the sender at the new file only after receiver readiness is verified with synthetic traffic.
+6. Retire v1 receiver behavior separately. The RAGLeakGuard v2 sender never falls back to it.
 
-- **Provisioning and sharing:** generate at a controlled sender host and deliver the `(key_id, secret)` to the verifying receiver through a separately controlled confidential channel. Do not send it in the webhook, command line, environment dumps, logs, tickets, or repository.
-- **Backup and recovery:** back up sender and receiver mappings through separately access-controlled, tested recovery procedures. Secret loss requires restoration or explicit new-secret provisioning; it must not cause unsigned delivery.
-- **Rotation:** generate a new file, provision its new `(key_id, secret)` at the receiver, point the sender to the new file, retain the old receiver mapping through the freshness/replay window after the last possible old send, then retire it. Do not replace secret bytes in place.
-- **Compromise:** provision a new file and receiver mapping, cut over, retire the compromised mapping as soon as incident handling permits, and investigate sender/receiver logs and downstream effects. A compromised shared secret permits forgery.
-- **Identifiers:** never reuse a retired key ID, including with different secret bytes. Key IDs are non-secret selectors, not installation IDs.
+Legacy v1 secret files and receivers fail closed. A v1 file cannot masquerade as v2 by renaming it. Rotation within v2 also uses a new file/new key ID: provision receiver first, cut the sender over, retain the old mapping through the last possible freshness/retry window, then retire it. Secret backup, recovery, compromise response, and receiver mapping remain operator responsibilities.
 
 ## Exact event body
 
-The UTF-8 body is exactly these 60 bytes, with no BOM, insignificant whitespace, or trailing newline:
+The UTF-8 body is exactly these 60 bytes, with no BOM, whitespace variance, or trailing newline:
 
 ```json
-{"event":"ragleakguard.monitor.exposure-change","version":1}
+{"event":"ragleakguard.monitor.exposure-change","version":2}
 ```
 
-The sender serializes the two-field object with `ensure_ascii=True`, `sort_keys=True`, and separators `(',', ':')`, then asserts the exact bytes and size. That immutable byte object is signed and passed unchanged to the transport; it is not reserialized.
+Serialization uses `ensure_ascii=True`, `sort_keys=True`, and separators `(',', ':')`, then asserts the exact bytes and length. The same immutable byte object is signed and transmitted.
 
-The body intentionally carries no timestamp, source/store/state/key path, collection/tenant, record ID/token, finding value/type/count/total/span, document text, exception, monitor key, signing secret, URL, or installation identifier.
+The body carries no timestamp, delivery ID, source/store/state/key path, collection/tenant, record ID/token, finding value/type/count/total/span, document text, exception, monitor key, webhook secret, URL, response, or installation identifier.
 
-## HTTP/1.1 request
+## Exact HTTP/1.1 request
 
-The request line is `POST`, one ASCII space, the exact validated origin-form request target, and ` HTTP/1.1`. The complete application header allowlist is:
+The request line is `POST`, one ASCII space, the exact validated origin-form target, and ` HTTP/1.1`. The complete application header allowlist and order are:
 
 | Header | Exact value or format |
 |---|---|
-| `Host` | Normalized lowercase ASCII authority; an optional non-default port is included. |
-| `Content-Length` | `60` |
-| `Content-Type` | `application/json` |
-| `User-Agent` | `RAGLeakGuard-Webhook/1` |
-| `X-RAGLeakGuard-Webhook-Version` | `1` |
-| `X-RAGLeakGuard-Key-Id` | 32 lowercase hexadecimal characters |
-| `X-RAGLeakGuard-Timestamp` | UTC Unix time in whole decimal seconds, with no sign or leading zeroes |
-| `X-RAGLeakGuard-Nonce` | Fresh 128 CSPRNG bits encoded as 32 lowercase hexadecimal characters |
-| `X-RAGLeakGuard-Signature` | `v1=` plus the full 64-lowercase-hex HMAC-SHA-256 digest |
+| `Host` | Normalized lowercase ASCII authority; non-default port included. |
+| `Content-Length` | `60`. |
+| `Content-Type` | `application/json`. |
+| `User-Agent` | `RAGLeakGuard-Webhook/2`. |
+| `X-RAGLeakGuard-Webhook-Version` | `2`. |
+| `X-RAGLeakGuard-Key-Id` | 32 lowercase hex characters. |
+| `X-RAGLeakGuard-Delivery-Id` | The persisted 32-lowercase-hex 128-bit delivery ID. |
+| `X-RAGLeakGuard-Timestamp` | Fresh UTC Unix time in whole decimal seconds, no sign/leading zeroes. |
+| `X-RAGLeakGuard-Nonce` | Fresh 128 CSPRNG bits as 32 lowercase hex characters. |
+| `X-RAGLeakGuard-Signature` | `v2=` plus the full 64-lowercase-hex HMAC-SHA-256 digest. |
 
-No HTTP library defaults are used. The raw client adds no authorization, proxy authorization, cookie, referrer, accept, accept-encoding, connection, runtime-identifying user agent, source metadata, or other header. TLS records and TCP/IP framing are outside this HTTP-header allowlist.
+No HTTP-library defaults are used. The sender adds no authorization, proxy authorization, cookie, referrer, accept, compression, connection, runtime-identifying user agent, source metadata, or other header.
+
+Every actual attempt reuses only `X-RAGLeakGuard-Delivery-Id`. It resamples timestamp and nonce, rebuilds the request, and recomputes the signature. Attempt bytes are never persisted or replayed verbatim.
 
 ## Signature construction
 
-Use the 32 secret bytes directly as the HMAC-SHA-256 key. Each field is framed as:
+Use the 32 secret bytes directly as the HMAC-SHA-256 key. Frame every field as:
 
 ```text
 uint32_be(label_length) || label_ascii || uint64_be(value_length) || value_bytes
@@ -81,100 +86,103 @@ uint32_be(label_length) || label_ascii || uint64_be(value_length) || value_bytes
 Concatenate frames in exactly this order:
 
 ```text
-construction     = ASCII("RLG-WEBHOOK-HMAC-SHA256-v1")
+construction     = ASCII("RLG-WEBHOOK-HMAC-SHA256-v2")
 method           = ASCII("POST")
 authority        = exact ASCII Host header value
-request-target   = exact ASCII origin-form path and optional query sent
+request-target   = exact ASCII origin-form path and optional query
 content-length   = exact ASCII Content-Length value
 content-type     = exact ASCII Content-Type value
 user-agent       = exact ASCII User-Agent value
 webhook-version  = exact ASCII X-RAGLeakGuard-Webhook-Version value
 key-id           = exact ASCII X-RAGLeakGuard-Key-Id value
+delivery-id      = exact ASCII X-RAGLeakGuard-Delivery-Id value
 timestamp        = exact ASCII X-RAGLeakGuard-Timestamp value
 nonce            = exact ASCII X-RAGLeakGuard-Nonce value
 body             = exact 60 transmitted bytes
 ```
 
-Compute the full 32-byte HMAC-SHA-256, encode all 64 digest hex characters in lowercase, and prefix `v1=`.
+Compute full HMAC-SHA-256, encode all 64 digest hex characters lowercase, and prefix `v2=`. The construction identifier, header values, delivery ID, and signature prefix deliberately domain-separate v2 from v1.
 
-### Published test vector
+### Published protocol-v2 test vector
 
 ```text
 secret bytes     = 00 01 02 ... 1f
 secret Base64    = AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
 key_id           = 00112233445566778899aabbccddeeff
+delivery_id      = ffeeddccbbaa99887766554433221100
 method           = POST
 URL              = https://receiver.example.test/hooks/rlg?channel=security
 authority        = receiver.example.test
 request-target   = /hooks/rlg?channel=security
+content-length   = 60
+content-type     = application/json
+user-agent       = RAGLeakGuard-Webhook/2
+webhook-version  = 2
 timestamp        = 1786320000
 nonce            = 0123456789abcdeffedcba9876543210
-body             = {"event":"ragleakguard.monitor.exposure-change","version":1}
-signature        = v1=6405d41258cc777845c57c39ec86528bb19a1b8f30c589c8fe870274f397ae3c
+body             = {"event":"ragleakguard.monitor.exposure-change","version":2}
+signature        = v2=fd7ce5c478368ffeb37c38d04d9ae5cb18e2a45b507e870ab9f48829ce13a438
 ```
 
-The test suite reproduces this value and verifies it through the independent receiver path.
+The tests independently frame every field, reproduce the signature, verify it, and reject tampering with every signed field.
 
-## Receiver algorithm
+## Receiver verification and durable deduplication
 
-A receiver must retain the raw method, authority, origin-form request target, header occurrences/values, and body bytes. Framework normalization must not hide duplicate headers or alter the target before verification.
+A receiver must retain the raw method, authority, origin-form target, header occurrences/values, and body. Framework normalization must not hide duplicates or rewrite the target before verification.
 
-Language-neutral verification order:
+Required order:
 
-1. Require method `POST`, exact 60-byte body/schema, exact header-name allowlist, exact fixed header values, normalized Host, origin-form request target, supported version, lowercase formats, and a Content-Length that equals the received body length.
-2. Reject duplicate headers. Select exactly one 32-byte secret by `X-RAGLeakGuard-Key-Id`; reject unknown or retired IDs.
-3. Reconstruct the frames above from the received values and compute the expected full HMAC-SHA-256.
-4. Compare the received and computed signatures with a constant-time digest comparison. Do not perform freshness or replay-cache acceptance before authentication succeeds.
-5. Parse the authenticated timestamp and require `abs(receiver_now - timestamp) <= 300` seconds. Both boundary seconds are accepted.
-6. Atomically reject an already accepted `(key_id, nonce)` and retain a new entry until at least `timestamp + 300` seconds. A future-skewed accepted timestamp can therefore require retention for up to 600 seconds after receipt.
-7. Only after all checks pass, treat the request as the single `ragleakguard.monitor.exposure-change` event.
+1. Enforce exact method, 60-byte body/schema, header-name allowlist, fixed header values, normalized Host, origin-form target, protocol version, lowercase formats, and matching content length.
+2. Reject duplicate headers and select exactly one v2 secret by key ID.
+3. Reconstruct all frames and compute the expected full v2 HMAC.
+4. Compare signatures in constant time. No freshness, nonce, delivery-store, or downstream action occurs before authentication succeeds.
+5. Parse the authenticated timestamp and require `abs(receiver_now - timestamp) <= 300` seconds.
+6. Atomically reject a previously accepted `(key_id, nonce)` and retain a new entry through at least `timestamp + 300`. A future-skewed request can therefore require retention for up to 600 seconds after receipt.
+7. Consult a durable, atomic delivery-ID store shared by every receiver node.
+8. Process a previously unseen authenticated `(key_id, delivery_id)` once under that store's documented transaction/claim semantics.
+9. For an already accepted delivery ID with a fresh authenticated nonce, skip downstream processing and return the same documented successful `2xx` class (for example `204`).
 
-The Python helper `verify_webhook_request` implements this order and accepts an atomic cache object with `accept(key_id, nonce, timestamp, receiver_now)`. `WebhookReplayCache` is a thread-safe process-local reference implementation. Production receiver topology determines whether a shared/durable cache is needed.
+The Python helper `verify_webhook_request` accepts:
 
-Wrong secrets, unknown IDs, malformed/non-lowercase signatures, unsupported versions, duplicate/extra/missing headers, body/method/Host/request-target/header tampering, stale/future timestamps outside the inclusive window, and authenticated duplicate nonces are rejected rather than treated as events.
+- a nonce cache with `accept(key_id, nonce, timestamp, receiver_now) -> bool`;
+- a delivery store with `process_once(key_id, delivery_id, processor) -> bool`, returning `True` only when it ran the processor and durably accepted the new ID, or `False` for an already accepted duplicate; and
+- a zero-argument event processor.
+
+It returns `WebhookVerificationResult(duplicate=False)` for a newly processed delivery and `WebhookVerificationResult(duplicate=True)` for authenticated duplicate-success behavior. `WebhookReplayCache` and `WebhookMemoryDeliveryStore` are thread-safe process-local reference implementations for tests; neither is production-durable. Production topology requires a durable, atomic delivery-ID store and an appropriate shared nonce mechanism across all nodes.
+
+The delivery-store interface reduces duplicate downstream work but does not establish exactly-once processing. Retention expiry, storage loss, multi-node inconsistency, and a crash or non-atomic boundary between downstream processing and deduplication commit can permit duplicate effects. Receiver implementations must document their transaction ordering and recovery behavior.
 
 ## URL and transport policy
 
-- URL input is ASCII and at most 2048 bytes. Only `https` with a non-empty normalized host and optional port `1..65535` is accepted. Empty path becomes `/`.
-- User information, embedded credentials, fragments, whitespace/control characters, backslashes, invalid percent escapes, malformed hosts/authorities/ports, non-ASCII input, and unsupported schemes fail before source access. Exact validated percent-encoded path/query spelling is preserved; it is not decoded or re-encoded.
-- The URL, path/query, Host, key ID, signature, response data, and underlying failures are never printed or interpolated into errors/reprs.
-- Python's default TLS context provides certificate-chain and hostname verification. There is no disable switch and no HTTP or localhost exception.
-- Exactly one synchronous POST is transmitted. Redirect handling is absent by construction. Every `3xx`, including same-origin, cross-origin, and HTTPS-to-HTTP locations, fails without another request.
-- One 10-second monotonic deadline begins before DNS and is carried through address connection attempts, TLS handshake, request-head/body writes, and response-header completion. DNS runs behind a bounded daemon-thread handoff because portable Python exposes no timeout for the platform resolver; the caller exits on the shared deadline, although a stuck OS resolver call may remain in that daemon thread until the platform returns.
-- The client reads one TLS byte at a time only through `\r\n\r\n`, so it does not consume response-body bytes even when the peer has already sent them. It closes without parsing, persisting, or printing a body.
-- Only `200..299` succeeds. `1xx`, `3xx`, `4xx`, `5xx`, malformed/oversized headers, EOF, deadline expiry, and DNS/socket/TLS/write/read failures become one static exit-5 delivery failure. `Webhook alert delivered.` is printed only after accepted response headers.
+- Input is bounded to 2048 ASCII bytes and exact HTTPS. Credentials, fragments, controls/whitespace, backslashes, malformed hosts/ports/percent escapes, and non-ASCII input fail before source access.
+- Exact validated percent-encoded path/query spelling is preserved. URL, authority, query, key/delivery IDs, signature, response data, and failures are never printed.
+- Default TLS certificate-chain and hostname verification cannot be disabled. There is no HTTP or localhost exception.
+- One synchronous POST is permitted per invocation. Redirect handling is absent; every `3xx` fails without a second request.
+- One 10-second monotonic deadline covers DNS, address connection attempts, TLS handshake, request writes, and response headers. The bounded daemon-thread DNS handoff can leave a stuck OS resolver thread until the platform returns.
+- The client reads one byte at a time only through `\r\n\r\n`, then closes without consuming, persisting, or printing response-body bytes.
+- Only `200..299` succeeds. Informational, redirect, error, malformed/oversized, EOF, timeout, DNS, socket, TLS, write, and read failures become static delivery failure.
 
-## Monitor ordering and failure semantics
+## Sender state machine and exits
 
-1. Validate source/path pairing, locale, and detection runtime.
-2. If either webhook option is present, validate the pair, HTTPS URL, and dedicated secret before source access.
-3. Load the monitor key, bind the source scope, and authenticate/validate state before source access.
-4. Read, detect, build the current snapshot, and calculate the delta.
-5. Initialization creates the baseline and sends nothing.
-6. No-change and resolved-only runs replace the checkpoint and send nothing.
-7. A new/changed exposure without a webhook replaces the checkpoint, reports the change, and exits 1.
-8. A new/changed exposure with a webhook constructs the fixed body, samples timestamp/nonce, builds the allowlist, and signs before checkpoint replacement. Preparation failure exits 5 with the prior checkpoint preserved and no request.
-9. Checkpoint failure exits 4 with no request and preserves the prior checkpoint in tested failure paths.
-10. The sender transmits the already prepared request once. Accepted `2xx` prints the delivery line and exits 1 for the exposure. Transport/response failure advances no further state, prints only the static delivery failure, and exits 5.
+1. Validate source/path, locale, detection runtime, webhook pair/URL/v2 secret, monitor key, and authenticated state before connector access.
+2. If a v3 pending alert exists, the pending alert blocks source access and newer scans.
+3. Missing v2 webhook configuration, safe-retry precondition failure, or not-yet-due backoff leaves state unchanged and exits 5 without a request.
+4. A due retry prepares a fresh request with the persisted delivery ID and makes at most one attempt.
+5. Failed delivery atomically advances bounded attempt/backoff metadata. Successful update exits 5; update failure preserves prior authenticated pending state in tested paths and exits 4.
+6. Accepted `2xx` permits atomic clear. Clear success prints `Webhook response accepted; pending alert cleared. No downstream processing is claimed.` and exits without scanning. Clear failure prints static ambiguous delivery and exits 4; later delivery can duplicate.
+7. With no pending alert, initialization/no-change/resolved-only behavior sends nothing. Local-only exposure behavior writes the checkpoint and exits 1 without an outbox.
+8. A configured new/changed exposure generates one delivery ID, atomically commits checkpoint plus pending alert, then follows steps 4–6. No timestamp, nonce, signature, or request exists before that commit.
 
-Step 10 deliberately follows checkpoint replacement. If transport fails, the checkpoint is already advanced and a later run will ordinarily not reconstruct the alert.
+Exit 1 still identifies a new/changed exposure found by the current scan after its required local state transition. A recovered pending alert accepted and cleared at invocation start exits 0 because no scan occurred. Exit 5 covers pending/backoff/configuration/preparation/delivery failures. Exit 4 covers state/retry-metadata and accepted-but-not-cleared ambiguity.
 
-## Compatibility and explicit exclusions
+## Compatibility, exclusions, and residual risks
 
-- Existing unsigned `--webhook` jobs break deliberately and fail closed. Receivers must implement this protocol before cutover.
-- The fixed version-1 event replaces the prior unversioned payload containing store metadata, totals, record tokens, and type/count details.
-- Direct Slack and Discord incoming webhooks are not compatible. Zapier, n8n, or another integration is not directly supported unless a receiver/gateway first implements and tests this verifier.
-- Exit 5 is new for webhook configuration, secret loading/generation, preparation/signing, transport, redirect, and response failures. Exit 1 with a configured webhook means an exposure plus accepted `2xx` response headers.
-- Monitor state remains version 2. No pending-delivery or webhook data is persisted.
-- Importable webhook helper call shapes changed incompatibly. Python modules do not have a separately versioned stable SDK contract.
-- This package intentionally excludes durable outbox/pending delivery, retries, backoff, jitter, idempotency keys or guarantees, dead-letter handling, crash recovery, multi-destination routing, and exactly-once/at-least-once delivery claims.
-
-## Residual risks and non-claims
-
-- HMAC provides shared-secret authenticity/integrity, not confidentiality and not replay prevention by itself. TLS supplies in-transit confidentiality/authentication under the configured CA trust.
-- Receiver verification, clock correctness, key mapping, atomic cache behavior, restart/multi-node cache topology, logging, and downstream adapters are external dependencies. A restart or nodes without shared cache can admit replay inside the window.
-- Sender-clock correctness affects the signed timestamp. Nonces have a non-zero collision probability; receivers still reject duplicate pairs.
-- A compromised sender, receiver, shared secret, Python runtime, dependency, CA store, or endpoint can disclose or forge material within its access.
-- The checkpoint-before-transport window can lose an alert. A send or response failure cannot prove that the receiver did not accept a complete request, and crashes around sending remain ambiguous until separately implemented durable delivery work.
-- `2xx` proves only that response headers satisfied this client contract, not that a receiver stored, forwarded, notified, or acted on the event.
-- This protocol does not prove detector/connector completeness, production safety, compliance, breach prevention, receiver trustworthiness, or alert reliability. Review the broader [security policy](../SECURITY.md) and [threat model](THREAT_MODEL.md).
+- Protocol/secret v1 remains historical documentation context only and is not accepted by this durable sender/verifier. There is no silent downgrade or compatibility masquerading.
+- Protocol-v2 and state-v3 helper call shapes are incompatible. Importable Python modules have no separately versioned stable SDK guarantee.
+- One pending alert and one destination are supported. There is no queue, fan-out, multi-destination routing, direct Slack/Discord adapter, hosted receiver, database, Control Plane, tenancy, RBAC/SSO, billing, vault/KMS, or fleet management.
+- There is no dead-letter inspection, acknowledgement, replay, purge, or maximum-attempt discard. A permanently pending alert blocks scans indefinitely.
+- A send/response/clear crash is ambiguous and can duplicate delivery. Durable receiver deduplication reduces but cannot eliminate that risk.
+- HMAC supplies authenticity/integrity, not confidentiality. TLS, receiver clocks, key mapping, cache/store behavior, logging, downstream systems, CA/runtime integrity, and shared-secret protection are external dependencies.
+- A `2xx` proves only that sender response-header requirements were met. It proves neither event storage nor downstream processing, notification, or human action.
+- Alerts lost under version 1 or the former version-2 checkpoint-before-send ordering cannot be reconstructed.
+- This protocol does not prove detector/connector completeness, production safety, compliance, breach prevention, erasure, receiver trustworthiness, or delivery under every host/network/filesystem failure.
