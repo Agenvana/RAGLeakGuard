@@ -1,7 +1,6 @@
 # Threat model
 
-**Baseline:** WP7A begins at `e9fdbbe456386b052f35de2c180901275aa6747c`. RAGLeakGuard is an
-alpha security project. No source-scanning connector is currently available.
+**Baseline:** WP7A implemented runtime behavior was independently inspected at `59cc737732d18d29cb87c93df7117f1324586ec2` on 2026-08-12. RAGLeakGuard is an alpha security project. No source-scanning connector is currently available.
 
 ## Scope
 

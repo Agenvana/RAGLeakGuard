@@ -1,9 +1,6 @@
 # Architecture
 
-**Baseline:** WP7A is implemented from Git commit
-`e9fdbbe456386b052f35de2c180901275aa6747c`. This security change requires independent review
-before merge. It is not a stability, production-readiness, connector-completeness, or compliance
-guarantee.
+**Baseline:** WP7A implemented runtime behavior was independently inspected at Git commit `59cc737732d18d29cb87c93df7117f1324586ec2` on 2026-08-12. This is an alpha architecture description, not a stability, production-readiness, connector-completeness, or compliance guarantee.
 
 ## Implemented now
 
