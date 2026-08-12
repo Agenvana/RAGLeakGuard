@@ -10,7 +10,7 @@ The sender options are a required pair:
 --webhook HTTPS_URL --webhook-secret-file PATH
 ```
 
-`--webhook` without its secret exits 5. A secret without `--webhook` exits 2. URL and secret validation occur before monitor-key/state loading and before connector access. There is no unsigned mode, fallback key, literal secret option, environment fallback, monitor-key reuse, automatic generation, downgrade, dual-send, or receiver compatibility mode.
+`--webhook` without its secret exits 5. A secret without `--webhook` exits 2. URL and secret validation occur before monitor-key/state loading. Direct Chroma new scans are disabled, so no connector access follows. There is no unsigned mode, fallback key, literal secret option, environment fallback, monitor-key reuse, automatic generation, downgrade, dual-send, or receiver compatibility mode.
 
 Protocol v2 requires a new secret file and new key ID:
 
@@ -164,16 +164,22 @@ The delivery-store interface reduces duplicate downstream work but does not esta
 
 ## Sender state machine and exits
 
-1. Validate source/path, locale, detection runtime, webhook pair/URL/v2 secret, monitor key, and authenticated state before connector access.
+1. Validate source/path and locale syntax, webhook pair/URL/v2 secret, monitor key, and authenticated state. Disabled new-scan paths do not initialize detection or access a connector.
 2. If a v3 pending alert exists, the pending alert blocks source access and newer scans.
 3. Missing v2 webhook configuration, safe-retry precondition failure, or not-yet-due backoff leaves state unchanged and exits 5 without a request.
 4. A due retry prepares a fresh request with the persisted delivery ID and makes at most one attempt.
 5. Failed delivery atomically advances bounded attempt/backoff metadata. Successful update exits 5; update failure preserves prior authenticated pending state in tested paths and exits 4.
 6. Accepted `2xx` permits atomic clear. Clear success prints `Webhook response accepted; pending alert cleared. No downstream processing is claimed.` and exits without scanning. Clear failure prints static ambiguous delivery and exits 4; later delivery can duplicate.
-7. With no pending alert, initialization/no-change/resolved-only behavior sends nothing. Local-only exposure behavior writes the checkpoint and exits 1 without an outbox.
-8. A configured new/changed exposure generates one delivery ID, atomically commits checkpoint plus pending alert, then follows steps 4–6. No timestamp, nonce, signature, or request exists before that commit.
+7. With no pending alert, the current CLI exits 6 before initialization, no-change, resolved-only,
+   local-exposure, or new-alert behavior. It preserves authenticated state and sends nothing.
+8. The WP6 new-alert ordering remains implemented in library code but is unreachable from the
+   disabled current CLI new-scan path. It is not evidence that scanning or new-alert creation is
+   available.
 
-Exit 1 still identifies a new/changed exposure found by the current scan after its required local state transition. A recovered pending alert accepted and cleared at invocation start exits 0 because no scan occurred. Exit 5 covers pending/backoff/configuration/preparation/delivery failures. Exit 4 covers state/retry-metadata and accepted-but-not-cleared ambiguity.
+Exit 1 is not emitted by the disabled current CLI new-scan path. A recovered pending alert accepted
+and cleared at invocation start exits 0 because no scan occurred. Exit 6 marks the disabled new-scan
+boundary. Exit 5 covers pending/backoff/configuration/preparation/delivery failures. Exit 4 covers
+state/retry-metadata and accepted-but-not-cleared ambiguity.
 
 ## Compatibility, exclusions, and residual risks
 
@@ -185,4 +191,4 @@ Exit 1 still identifies a new/changed exposure found by the current scan after i
 - HMAC supplies authenticity/integrity, not confidentiality. TLS, receiver clocks, key mapping, cache/store behavior, logging, downstream systems, CA/runtime integrity, and shared-secret protection are external dependencies.
 - A `2xx` proves only that sender response-header requirements were met. It proves neither event storage nor downstream processing, notification, or human action.
 - Alerts lost under version 1 or the former version-2 checkpoint-before-send ordering cannot be reconstructed.
-- This protocol does not prove detector/connector completeness, production safety, compliance, breach prevention, erasure, receiver trustworthiness, or delivery under every host/network/filesystem failure.
+- No source-scanning connector is currently available. This protocol does not prove detector/connector completeness, production safety, compliance, breach prevention, erasure, receiver trustworthiness, or delivery under every host/network/filesystem failure.

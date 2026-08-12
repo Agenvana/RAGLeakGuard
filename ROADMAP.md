@@ -18,6 +18,9 @@ Early development (the **Diagnose** stage). Checkboxes are intent, not commitmen
 - [ ] **MRN / record-identifier recogniser** (from Report #1 benchmark, 2026-07-04): `MRN-482913`-style chart numbers are invisible to every engine tested (0–40% recall, and then only via mislabels). Context-gated pattern (`MRN-`, "chart", "record"). Directly feeds the Sep clinic/voice-agent report.
 
 ## Connectors
+No source-scanning connector is currently available.
+
+- [ ] **Snapshot-backed Chroma feasibility and security review** — direct local Chroma access is disabled after executable endpoint evidence established durable mutation for ChromaDB 1.5.0 and 1.5.9. Other versions have not established an acceptable read-only boundary. [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred, not completed. Snapshot support is unavailable and is not a commitment.
 - [ ] Pinecone
 - [ ] pgvector (Postgres)
 - [ ] Qdrant, Weaviate

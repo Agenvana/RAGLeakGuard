@@ -4,7 +4,7 @@ RAGLeakGuard releases require explicit human approval. CI, an agent, or a merged
 
 ## Current baseline
 
-At commit `75fb62766f7324264a6ed08847018a6cac348e8b`:
+Release-system facts recorded at commit `75fb62766f7324264a6ed08847018a6cac348e8b`:
 
 - PyPI reports `ragleakguard` version `0.1.0` and Python `>=3.9`.
 - `pyproject.toml` declares version `0.1.0`, while `ragleakguard.__version__` is `0.0.1`. This mismatch must be resolved before the next release; this documentation-only change does not alter either value.
@@ -12,6 +12,12 @@ At commit `75fb62766f7324264a6ed08847018a6cac348e8b`:
 - CI runs the test suite for pull requests and pushes to `main` on `ubuntu-latest` with Python 3.9.
 - CI installs ranged dependencies and downloads `en_core_web_sm`; inputs are not fully locked.
 - There is no package-build, artifact-install, provenance, checksum, secret/dependency-scan, or PyPI publication workflow in this repository.
+
+WP7A corrective status from approved baseline
+`e9fdbbe456386b052f35de2c180901275aa6747c`:
+
+- PyPI `0.1.0` contains the unsafe direct Chroma path and must not be used for Chroma scanning. WP7A removes the Chroma runtime extra and disables direct access in source, but no corrective package has been published.
+- Executable endpoint evidence established durable mutation for ChromaDB 1.5.0 and 1.5.9. Other versions have not established an acceptable read-only boundary. Issue #15 was deferred, not completed.
 
 Do not describe the current workflow as a reproducible release pipeline.
 
@@ -38,6 +44,7 @@ All applicable gates must pass on the exact release commit.
 - Reconcile README, roadmap, architecture, threat model, security policy, CLI help, and package metadata with implemented behavior.
 - Re-check every present-tense security/compliance/production claim against evidence.
 - Confirm that planned connectors, locales, Prevent/Fix, Prove, Control Plane, certification, and assurance behavior are labeled planned.
+- Confirm that no source-scanning connector is advertised, snapshot-backed support is described as unavailable and under separate review, and no Chroma supported-version or guaranteed-future-support claim appears.
 - Review logs, errors, reports, state, webhooks, fixtures, and built artifacts for secrets, PII canaries, paths, and tenant/record identifiers.
 - Complete coordinated disclosure for any vulnerability that should not be exposed by release notes.
 
@@ -66,7 +73,7 @@ python -m twine check dist/*
 - Build wheel and sdist once from the reviewed commit in a clean environment.
 - Record builder OS/architecture, Python version, build frontend/backend versions, lock/material inputs, source SHA, and timestamp.
 - Inspect both archives for unexpected files, secrets, stores, state, reports, credentials, or private material.
-- Install each artifact into a fresh environment and exercise imports, CLI help, a synthetic seed/scan, monitor baseline/diff, and failure exits without repository-relative imports.
+- Install each artifact into a fresh environment without Chroma and exercise imports, CLI help, synchronous `read_chroma()` failure, disabled scan/monitor exit 6, and pending-alert recovery without repository-relative imports.
 - Generate SHA-256 checksums and provenance for the final artifacts. Do not rebuild after approval; publish the reviewed bytes.
 
 ### 6. Supply chain
@@ -87,10 +94,18 @@ Python package indexes are append-only: never replace files for an existing vers
 
 1. Stop further publication and preserve logs, artifacts, hashes, credentials, and the affected source SHA.
 2. If compromise is suspected, revoke/rotate publication credentials and protect the advisory details.
-3. Yank the affected PyPI version when continued installation is unsafe, with a concise reason that does not expose embargoed details.
+3. Yank the affected PyPI version only after explicit human authorization, with a concise reason that does not expose embargoed details. WP7A implementation and review alone do not authorize a yank.
 4. Publish a new patched version from a reviewed commit; do not reuse the old version number or tag.
 5. Add an advisory/release note, upgrade guidance, affected-version range, and evidence after coordinated disclosure approval.
 6. Review whether reports or public claims relied on the affected behavior. Amend them separately; never rewrite released artifacts.
+
+For the WP7A corrective release, the release note must say that direct local Chroma scanning is
+disabled; no source-scanning connector is currently available; Issue #15 was deferred, not
+completed; ChromaDB 1.5.0 and 1.5.9 exhibited durable mutation; other versions have not established
+an acceptable read-only boundary; snapshot-backed support is unavailable and under separate review;
+and PyPI 0.1.0 must not be used for Chroma scanning. This repository has no unreleased release-note
+mechanism, so do not invent a version or changelog file; carry the exact proposed wording in the
+reviewed pull request until a human authorizes release preparation.
 
 ## Planned automation
 

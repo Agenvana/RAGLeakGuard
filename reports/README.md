@@ -8,6 +8,6 @@ A monthly, methods-open report on where AI pipelines actually leak data. Measure
 
 Issue #2 (August 2026): *"The Erasure Illusion"*. We test what "delete" actually deletes in AI memory.
 
-**Reproduce issue #1:** `scripts/benchmark.py` (280 labelled identifiers, 28 US/AU format variants, 4 configurations) and `scripts/clinic_eval.py` (100-record synthetic clinic store, end-to-end through Chroma). Fixed seeds; identical numbers on every run. All data is synthetic; no real person's information is used anywhere.
+**Historical issue #1 evidence:** `scripts/benchmark.py` used 280 labelled identifiers and 28 US/AU format variants; `scripts/clinic_eval.py` used a 100-record synthetic clinic store and the then-current Chroma connector. The released result is tied to its historical source snapshot and does not establish current connector availability or safety. Direct local Chroma scanning is now disabled. All fixture data is synthetic; see [benchmark reproducibility](../docs/BENCHMARK_REPRODUCIBILITY.md).
 
 Author: Wen-Chia "Belle" Chang · Agenvana

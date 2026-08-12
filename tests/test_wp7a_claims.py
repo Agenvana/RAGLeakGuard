@@ -1,0 +1,149 @@
+"""Package and public-claim regression tests for WP7A."""
+import re
+from pathlib import Path
+
+import pytest
+from click import unstyle
+from typer.testing import CliRunner
+
+from ragleakguard import cli
+
+
+ROOT = Path(__file__).resolve().parents[1]
+ENGLISH_CURRENT = (
+    ROOT / "README.md",
+    ROOT / "SECURITY.md",
+    ROOT / "CONTRIBUTING.md",
+    ROOT / "ROADMAP.md",
+    ROOT / "docs" / "ARCHITECTURE.md",
+    ROOT / "docs" / "THREAT_MODEL.md",
+    ROOT / "docs" / "MONITOR_STATE.md",
+    ROOT / "docs" / "RELEASE_PROCESS.md",
+)
+
+
+def test_package_metadata_has_no_chroma_runtime_dependency_or_capability_claim():
+    document = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    optional_dependencies = re.search(
+        r"^\[project\.optional-dependencies\]\s*(.*?)(?=^\[)",
+        document,
+        re.MULTILINE | re.DOTALL,
+    ).group(1)
+    description = re.search(
+        r'^description\s*=\s*"([^"]+)"$', document, re.MULTILINE
+    ).group(1)
+    sdist = re.search(
+        r"^\[tool\.hatch\.build\.targets\.sdist\]\s*(.*)",
+        document,
+        re.MULTILINE | re.DOTALL,
+    ).group(1)
+    sdist_include = re.findall(
+        r'"([^"]+)"', re.search(r"include\s*=\s*\[(.*?)\]", sdist, re.DOTALL).group(1)
+    )
+    sdist_exclude = re.findall(
+        r'"([^"]+)"', re.search(r"exclude\s*=\s*\[(.*?)\]", sdist, re.DOTALL).group(1)
+    )
+
+    assert "chroma" not in optional_dependencies.lower()
+    assert "chromadb" not in document.lower()
+    assert "chroma" not in description.lower()
+    assert "scan your ai's vector database" not in description.lower()
+    assert re.search(r'^requires-python\s*=\s*">=3\.9"$', document, re.MULTILINE)
+
+    assert set(sdist_include) == {
+        "/src/ragleakguard",
+        "/README.md",
+        "/README.zh-TW.md",
+        "/LICENSE",
+        "/pyproject.toml",
+    }
+    assert not any(
+        forbidden in item
+        for item in sdist_include
+        for forbidden in ("tests", "reports", "scripts", ".github", ".env")
+    )
+    assert sdist_exclude == ["/.gitignore"]
+
+
+@pytest.mark.parametrize("path", ENGLISH_CURRENT, ids=lambda path: path.name)
+def test_current_english_claim_surfaces_record_wp7a_safety_boundary(path):
+    text = path.read_text(encoding="utf-8")
+    lowered = text.lower()
+
+    assert "1.5.0" in text and "1.5.9" in text
+    assert "other" in lowered and "read-only boundary" in lowered
+    assert "no source-scanning connector" in lowered or "no source-scanning connector is available" in lowered
+    assert "snapshot" in lowered and (
+        "unavailable" in lowered or "not implemented" in lowered
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        ROOT / "README.md",
+        ROOT / "README.zh-TW.md",
+        ROOT / "SECURITY.md",
+        ROOT / "CONTRIBUTING.md",
+        ROOT / "docs" / "ARCHITECTURE.md",
+        ROOT / "docs" / "THREAT_MODEL.md",
+        ROOT / "docs" / "RELEASE_PROCESS.md",
+    ),
+    ids=lambda path: path.name,
+)
+def test_public_claim_surfaces_warn_against_pypi_010_chroma_scanning(path):
+    text = path.read_text(encoding="utf-8")
+    assert "0.1.0" in text
+    assert "Chroma" in text
+    assert "must not be used" in text or "不得用於" in text
+
+
+def test_english_and_traditional_chinese_readmes_have_no_working_chroma_quickstart():
+    for name in ("README.md", "README.zh-TW.md"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        lowered = text.lower()
+        assert "ragleakguard scan --source chroma" not in lowered
+        assert "ragleakguard monitor --source chroma" not in lowered
+        assert "[chroma" not in lowered
+        assert ",chroma" not in lowered
+        assert "safe to run against production" not in lowered
+        assert "read-only; safe" not in lowered
+
+
+def test_traditional_chinese_readme_states_all_required_current_facts():
+    text = (ROOT / "README.zh-TW.md").read_text(encoding="utf-8")
+
+    for phrase in (
+        "目前沒有任何可用的來源掃描連接器",
+        "直接掃描本機 Chroma 已停用",
+        "1.5.0",
+        "1.5.9",
+        "尚未建立可接受的唯讀邊界",
+        "Issue #15",
+        "並未完成",
+        "目前未實作",
+        "PyPI `0.1.0`",
+        "不得用於 Chroma 掃描",
+    ):
+        assert phrase in text
+
+
+@pytest.mark.parametrize("command", ["scan", "monitor"])
+def test_cli_help_advertises_disabled_chroma_and_exit_six(command):
+    result = CliRunner().invoke(cli.app, [command, "--help"])
+    output = " ".join(unstyle(result.output).split())
+
+    assert result.exit_code == 0
+    assert "disabled" in output.lower()
+    assert "6 = direct Chroma scanning disabled" in output
+    assert "pinecone" not in output.lower()
+    assert "production" not in output.lower()
+    if command == "monitor":
+        assert "create a new baseline" not in output.lower()
+
+
+def test_current_docs_do_not_offer_a_chroma_scan_or_monitor_command():
+    for path in ENGLISH_CURRENT + (ROOT / "README.zh-TW.md",):
+        text = path.read_text(encoding="utf-8")
+        assert not re.search(r"ragleakguard\s+scan\s+--source\s+chroma", text, re.I)
+        assert not re.search(r"ragleakguard\s+monitor\s+--source\s+chroma", text, re.I)

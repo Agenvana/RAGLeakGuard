@@ -17,7 +17,7 @@ python -m venv .venv
 # Linux/macOS: source .venv/bin/activate
 # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ".[chroma,detect,dev]"
+python -m pip install -e ".[detect,dev]"
 python -m spacy download en_core_web_sm
 python -m pytest -q
 ```
@@ -62,9 +62,11 @@ A locale contribution must:
 
 ## Connectors and integrations
 
-**Implemented now:** the local Chroma connector. Pinecone and other connectors are **planned** even if an optional dependency or placeholder exists.
+**Implemented now:** no source-scanning connector is available. Direct local Chroma entry points fail closed before Chroma import or source access. [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred as `not planned`, not completed. Executable endpoint evidence established durable mutation with ChromaDB 1.5.0 and 1.5.9; other versions have not established an acceptable read-only boundary.
 
-Connector changes must remain application-level read-only and test empty, exact-page, multi-page, malformed metadata, duplication, cancellation, resume, size/rate bounds, and mutation during scanning. Completion status must distinguish complete from incomplete, inconsistent, cancelled, resumed, and failed results.
+Snapshot-backed support is under separate feasibility and security review and is unavailable. Do not add snapshot code, activate a connector, claim a supported Chroma range, or commit to future support without separate issue scope and evidence. PyPI 0.1.0 contains the unsafe direct Chroma path and must not be used for Chroma scanning.
+
+Any future connector change requires an independently reviewed read-only boundary and must test application and dependency effects, bounds, completeness, malformed input, cancellation, concurrent mutation, filesystem mutation, and outbound network behavior. An incomplete or inconsistent scan must never report success.
 
 Integrations must not emit raw detected values. Any metadata egress needs a documented allowlist and threat-model update.
 

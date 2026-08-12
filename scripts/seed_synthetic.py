@@ -1,6 +1,9 @@
-"""Seed a local Chroma store with SYNTHETIC (fake) sensitive records for testing.
+"""Development-only: seed a disposable Chroma store with synthetic records.
 
-Run after:  pip install -e ".[chroma,dev]"
+This script creates and mutates its target. It is not a supported RAGLeakGuard
+scanning workflow and must never target a real or production source store.
+
+Install Chroma separately in an isolated development environment before running.
 
     python scripts/seed_synthetic.py                 # 100 fake records -> ./sample_store
     python scripts/seed_synthetic.py 250 ./mystore   # custom count + path
@@ -79,7 +82,7 @@ def main(n: int, path: str) -> None:
     print(f"   Ground truth: each record has {len(PII_PER_RECORD)} PII items {PII_PER_RECORD}.")
     print(f"   → expected sensitive entities = {n} x {len(PII_PER_RECORD)} = {expected} (Day-4 recall target).")
     print(f"\nExample note:\n   {records[0]['text']}")
-    print("\nNext: build the Chroma connector (Day 3) to read these back out.")
+    print("\nFixture created. Direct RAGLeakGuard Chroma scanning is disabled.")
 
 
 if __name__ == "__main__":

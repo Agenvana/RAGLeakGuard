@@ -144,92 +144,34 @@ def test_cli_locale_failure_on_zero_item_source_creates_no_artifact_or_alert(
     _assert_private_failure(result)
 
 
-@pytest.mark.parametrize("command", ["scan", "monitor"])
-@pytest.mark.parametrize(
-    "raw_error",
-    [
-        ImportError(PRIVACY_CANARY),
-        OSError(PRIVACY_CANARY),
-    ],
-    ids=["missing-dependency", "missing-model"],
-)
-def test_cli_runtime_failure_on_zero_item_source_preserves_artifact_and_sends_no_alert(
-    monkeypatch, tmp_path, command, raw_error
+def test_scan_disabled_path_precedes_detection_runtime_and_preserves_report(
+    monkeypatch, tmp_path
 ):
-    def fail_to_build():
-        raise raw_error
-
-    detection._analyzer.cache_clear()
-    monkeypatch.setattr(detection, "_build_analyzer", fail_to_build)
-    source_calls = _patch_source(monkeypatch, [])
-    webhook_calls = []
-    monkeypatch.setattr(monitoring, "post_webhook", lambda *args, **kwargs: webhook_calls.append(args))
-    args, artifact = _command_args(command, tmp_path)
-    artifact.write_text("sentinel", encoding="utf-8")
-
-    try:
-        result = CliRunner().invoke(cli.app, args)
-    finally:
-        detection._analyzer.cache_clear()
-
-    assert result.exit_code == cli.EXIT_DETECTION_RUNTIME
-    assert isinstance(result.exception, SystemExit)
-    assert not source_calls
-    assert artifact.read_text(encoding="utf-8") == "sentinel"
-    assert not (Path(f"{artifact}.tmp")).exists()
-    assert not webhook_calls
-    assert {path.name for path in tmp_path.iterdir()} == {artifact.name}
-    _assert_private_failure(result)
-
-
-@pytest.mark.parametrize("command", ["scan", "monitor"])
-def test_mid_scan_model_failure_preserves_artifact_and_sends_no_alert(
-    monkeypatch, tmp_path, command
-):
-    calls = []
-
-    def fail_partway(text, locale=None):
-        calls.append(text)
-        if len(calls) == 2:
-            raise detection.MissingDetectionModelError(PRIVACY_CANARY)
-        return []
-
-    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
-    monkeypatch.setattr(detection, "detect", fail_partway)
-    _patch_source(monkeypatch, [SYNTHETIC_ITEM, dict(SYNTHETIC_ITEM, id="second")])
-    webhook_calls = []
-    monkeypatch.setattr(monitoring, "post_webhook", lambda *args, **kwargs: webhook_calls.append(args))
-    args, artifact = _command_args(command, tmp_path)
-    if command == "monitor":
-        key_path = tmp_path / "monitor-key.json"
-        monitoring.generate_key_file(str(key_path))
-        crypto = monitoring.MonitorCrypto(monitoring.load_key_file(str(key_path)))
-        scope = crypto.scope_token("chroma", str(tmp_path / PATH_CANARY))
-        baseline = monitoring.build_snapshot(
-            [SYNTHETIC_ITEM, dict(SYNTHETIC_ITEM, id="second")],
-            lambda text, locale=None: [],
-            crypto,
-            scope,
-        )
-        monitoring.save_state(
-            str(artifact), baseline, crypto, scope, initialize=True
-        )
-        before = artifact.read_bytes()
-    else:
-        artifact.write_text("sentinel", encoding="utf-8")
-        before = artifact.read_bytes()
+    detector_calls = []
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    monkeypatch.setattr(
+        detection,
+        "_build_analyzer",
+        lambda: detector_calls.append("analyzer") or (_ for _ in ()).throw(
+            AssertionError("detector must not initialize")
+        ),
+    )
+    monkeypatch.setattr(
+        detection,
+        "detect",
+        lambda *args, **kwargs: detector_calls.append("detect"),
+    )
+    args, report = _command_args("scan", tmp_path)
+    report.write_bytes(b"existing-report-sentinel")
+    before = report.read_bytes()
 
     result = CliRunner().invoke(cli.app, args)
 
-    assert result.exit_code == cli.EXIT_DETECTION_RUNTIME
-    assert len(calls) == 2
-    assert artifact.read_bytes() == before
-    assert not list(tmp_path.glob(".rlg-monitor-*.tmp"))
-    assert not webhook_calls
-    expected = {artifact.name}
-    if command == "monitor":
-        expected.add("monitor-key.json")
-    assert {path.name for path in tmp_path.iterdir()} == expected
+    assert result.exit_code == cli.EXIT_CONNECTOR_UNAVAILABLE
+    assert report.read_bytes() == before
+    assert not source_calls
+    assert not detector_calls
+    assert "Local Chroma scanning is disabled" in result.output
     _assert_private_failure(result)
 
 
@@ -240,38 +182,45 @@ def test_mid_scan_model_failure_preserves_artifact_and_sends_no_alert(
 def test_scan_supported_locale_forms_remain_compatible(
     monkeypatch, tmp_path, locale_arg, normalized
 ):
-    seen_locales = []
-
-    def fake_detect(text, locale=None):
-        seen_locales.append(locale)
-        return []
-
-    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
-    monkeypatch.setattr(detection, "detect", fake_detect)
-    _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    normalized_locales = []
+    real_normalize = detection.normalize_locale
+    monkeypatch.setattr(
+        cli,
+        "normalize_locale",
+        lambda value: normalized_locales.append(real_normalize(value))
+        or normalized_locales[-1],
+    )
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
     args, report = _command_args("scan", tmp_path, locale=locale_arg)
 
     result = CliRunner().invoke(cli.app, args)
 
-    assert result.exit_code == 0
-    assert seen_locales == [normalized]
-    assert report.exists()
-    assert "Risk-scored report written" in result.output
+    assert result.exit_code == cli.EXIT_CONNECTOR_UNAVAILABLE
+    assert normalized_locales == [normalized]
+    assert not source_calls
+    assert not report.exists()
+    assert "Local Chroma scanning is disabled" in result.output
 
 
-def test_monitor_successful_baseline_remains_compatible(monkeypatch, tmp_path):
-    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
-    monkeypatch.setattr(detection, "detect", lambda text, locale=None: [])
-    _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+def test_monitor_new_baseline_is_disabled_without_creating_state(monkeypatch, tmp_path):
+    detector_calls = []
+    monkeypatch.setattr(
+        detection,
+        "detect",
+        lambda *args, **kwargs: detector_calls.append("detect"),
+    )
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
     args, state = _command_args("monitor", tmp_path, locale="AU")
     monitoring.generate_key_file(str(tmp_path / "monitor-key.json"))
     args.append("--initialize")
 
     result = CliRunner().invoke(cli.app, args)
 
-    assert result.exit_code == 0
-    assert state.exists()
-    assert "baseline initialized" in result.output
+    assert result.exit_code == cli.EXIT_CONNECTOR_UNAVAILABLE
+    assert not state.exists()
+    assert not source_calls
+    assert not detector_calls
+    assert "Local Chroma scanning is disabled" in result.output
 
 
 @pytest.mark.parametrize("command", ["scan", "monitor"])
@@ -283,7 +232,7 @@ def test_cli_help_advertises_only_implemented_locale_and_failure_exit(command):
     assert "Locale pack: au" in normalized_output
     assert not any(locale in normalized_output for locale in ("uk |", "sg |", "in ("))
     assert "2 = usage/locale error" in normalized_output
-    assert "3 = detection unavailable" in normalized_output
+    assert "6 = direct Chroma scanning disabled" in normalized_output
     if command == "monitor":
         assert "4 = monitor key/state failure" in normalized_output
         assert "--key-file" in normalized_output
@@ -460,7 +409,7 @@ def test_monitor_initialize_refuses_invalid_existing_state_before_source(
 
 @pytest.mark.parametrize(
     "failure_point",
-    ["key-load", "state-validation", "canonicalization", "fingerprinting"],
+    ["key-load", "state-validation"],
 )
 def test_injected_monitor_failures_preserve_checkpoint_and_emit_no_success_or_webhook(
     monkeypatch, tmp_path, failure_point
@@ -497,65 +446,11 @@ def test_injected_monitor_failures_preserve_checkpoint_and_emit_no_success_or_we
                 monitoring.MonitorStateError(PRIVACY_CANARY)
             ),
         )
-    elif failure_point == "canonicalization":
-        monkeypatch.setattr(
-            monitoring,
-            "canonicalize_finding",
-            lambda finding: (_ for _ in ()).throw(
-                monitoring.MonitorFingerprintError(PRIVACY_CANARY)
-            ),
-        )
-    else:
-        monkeypatch.setattr(
-            monitoring,
-            "fingerprint",
-            lambda *args, **kwargs: (_ for _ in ()).throw(
-                monitoring.MonitorFingerprintError(PRIVACY_CANARY)
-            ),
-        )
-
     result = CliRunner().invoke(cli.app, args)
 
     assert result.exit_code == cli.EXIT_MONITOR_STATE
     assert state.read_bytes() == before
-    assert len(source_calls) == (0 if failure_point in {"key-load", "state-validation"} else 1)
-    assert not webhook_calls
-    assert not list(tmp_path.glob(".rlg-monitor-*.tmp"))
-    _assert_private_failure(result)
-
-
-@pytest.mark.parametrize("failure_point", ["temporary-write", "replacement"])
-def test_cli_checkpoint_write_failures_preserve_prior_and_emit_no_success_or_webhook(
-    monkeypatch, tmp_path, failure_point
-):
-    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
-    monkeypatch.setattr(detection, "detect", lambda text, locale=None: [])
-    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
-    webhook_calls = []
-    monkeypatch.setattr(
-        monitoring, "post_webhook", lambda *args, **kwargs: webhook_calls.append(args)
-    )
-    _, state, before = _prepare_valid_monitor_state(tmp_path)
-    args, _ = _command_args("monitor", tmp_path)
-
-    if failure_point == "temporary-write":
-        def fail_write(handle, encoded):
-            handle.write(encoded[:7])
-            raise OSError(PRIVACY_CANARY)
-
-        monkeypatch.setattr(monitoring, "_write_state_bytes", fail_write)
-    else:
-        monkeypatch.setattr(
-            monitoring,
-            "_replace_state",
-            lambda *args: (_ for _ in ()).throw(OSError(PRIVACY_CANARY)),
-        )
-
-    result = CliRunner().invoke(cli.app, args)
-
-    assert result.exit_code == cli.EXIT_MONITOR_STATE
-    assert state.read_bytes() == before
-    assert len(source_calls) == 1
+    assert not source_calls
     assert not webhook_calls
     assert not list(tmp_path.glob(".rlg-monitor-*.tmp"))
     _assert_private_failure(result)
@@ -716,6 +611,62 @@ def test_pending_retries_reuse_delivery_id_with_fresh_attempt_fields(
     assert "pending alert cleared" in second.output
 
 
+def test_accepted_pending_delivery_only_persists_atomic_outbox_clear(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    key_path, state_path, _, _ = _prepare_pending_monitor_state(tmp_path)
+    args, _ = _command_args("monitor", tmp_path)
+    secret_path = _add_webhook_pair(args, tmp_path)
+    key_before = key_path.read_bytes()
+    secret_before = secret_path.read_bytes()
+    crypto = monitoring.MonitorCrypto(monitoring.load_key_file(str(key_path)))
+    scope = crypto.scope_token("chroma", str(tmp_path / PATH_CANARY))
+    records_before = monitoring.load_state(str(state_path), crypto, scope)["records"]
+    forbidden_calls = []
+    monkeypatch.setattr(
+        detection,
+        "detect",
+        lambda *args, **kwargs: forbidden_calls.append("detect"),
+    )
+    monkeypatch.setattr(
+        monitoring,
+        "build_snapshot",
+        lambda *args, **kwargs: forbidden_calls.append("snapshot"),
+    )
+    monkeypatch.setattr(
+        monitoring,
+        "new_pending_alert",
+        lambda *args, **kwargs: forbidden_calls.append("new-pending"),
+    )
+    monkeypatch.setattr(monitoring.time, "time", lambda: 100)
+    monkeypatch.setattr(monitoring, "post_webhook", lambda prepared: 204)
+    real_save = monitoring.save_state
+    save_calls = []
+
+    def record_save(*save_args, **save_kwargs):
+        save_calls.append((save_args, save_kwargs))
+        return real_save(*save_args, **save_kwargs)
+
+    monkeypatch.setattr(monitoring, "save_state", record_save)
+
+    result = CliRunner().invoke(cli.app, args)
+
+    assert result.exit_code == 0
+    assert "pending alert cleared" in result.output
+    assert not source_calls
+    assert forbidden_calls == []
+    assert len(save_calls) == 1
+    assert save_calls[0][1]["pending_alert"] is None
+    assert key_path.read_bytes() == key_before
+    assert secret_path.read_bytes() == secret_before
+    loaded = monitoring.load_state(str(state_path), crypto, scope)
+    assert loaded["records"] == records_before
+    assert loaded["pending_alert"] is None
+    assert not list(tmp_path.glob(".rlg-monitor-*.tmp"))
+
+
 def test_accepted_response_clear_failure_is_ambiguous_and_retains_pending(
     monkeypatch, tmp_path
 ):
@@ -832,7 +783,7 @@ def test_generate_webhook_secret_cli_is_private_and_refuses_overwrite(tmp_path):
     assert secret_path.read_bytes() == before
 
 
-def test_pending_checkpoint_precedes_request_preparation_and_private_success(
+def test_disabled_new_scan_precedes_pending_creation_and_webhook_preparation(
     monkeypatch, tmp_path
 ):
     finding = {"type": "EMAIL_ADDRESS", "text": "detected-value-canary"}
@@ -878,18 +829,10 @@ def test_pending_checkpoint_precedes_request_preparation_and_private_success(
 
     result = CliRunner().invoke(cli.app, args)
 
-    assert result.exit_code == 1
-    assert events == [
-        "pending-construction",
-        "checkpoint-pending",
-        "prepare",
-        "transport",
-        "checkpoint-clear",
-    ]
-    assert state.read_bytes() != before
-    assert json.loads(state.read_text(encoding="utf-8"))["pending_alert"] is None
-    assert "Exposure change detected." in result.output
-    assert "Webhook response accepted; pending alert cleared." in result.output
+    assert result.exit_code == cli.EXIT_CONNECTOR_UNAVAILABLE
+    assert events == []
+    assert state.read_bytes() == before
+    assert "Local Chroma scanning is disabled" in result.output
     for canary in (
         "detected-value-canary",
         "record-id-canary",
@@ -901,7 +844,7 @@ def test_pending_checkpoint_precedes_request_preparation_and_private_success(
         assert canary not in result.output
 
 
-def test_webhook_preparation_failure_retains_durable_pending_and_sends_nothing(
+def test_disabled_new_scan_never_prepares_webhook_or_creates_pending(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
@@ -930,17 +873,14 @@ def test_webhook_preparation_failure_retains_durable_pending_and_sends_nothing(
 
     result = CliRunner().invoke(cli.app, args)
 
-    assert result.exit_code == cli.EXIT_WEBHOOK
-    assert state.read_bytes() != before
-    persisted = json.loads(state.read_text(encoding="utf-8"))
-    assert persisted["pending_alert"] is not None
-    assert persisted["pending_alert"]["attempts"] == 0
+    assert result.exit_code == cli.EXIT_CONNECTOR_UNAVAILABLE
+    assert state.read_bytes() == before
     assert not transport_calls
-    assert "Webhook alert preparation failed" in result.output
+    assert "Local Chroma scanning is disabled" in result.output
     _assert_private_failure(result)
 
 
-def test_abrupt_interruption_after_pending_commit_leaves_recoverable_alert(
+def test_disabled_new_scan_never_reaches_webhook_preparation_interrupt(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
@@ -967,15 +907,15 @@ def test_abrupt_interruption_after_pending_commit_leaves_recoverable_alert(
 
     result = CliRunner().invoke(cli.app, args)
 
-    assert result.exit_code == 130
+    assert result.exit_code == cli.EXIT_CONNECTOR_UNAVAILABLE
     assert isinstance(result.exception, SystemExit)
-    assert state.read_bytes() != before
-    assert json.loads(state.read_text(encoding="utf-8"))["pending_alert"] is not None
+    assert state.read_bytes() == before
     assert not transport_calls
+    assert "Local Chroma scanning is disabled" in result.output
     assert not any(signal in result.output for signal in SUCCESS_SIGNALS)
 
 
-def test_pending_construction_failure_sends_nothing_and_preserves_prior(
+def test_disabled_new_scan_never_constructs_pending_alert(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
@@ -1007,13 +947,14 @@ def test_pending_construction_failure_sends_nothing_and_preserves_prior(
 
     result = CliRunner().invoke(cli.app, args)
 
-    assert result.exit_code == cli.EXIT_WEBHOOK
+    assert result.exit_code == cli.EXIT_CONNECTOR_UNAVAILABLE
     assert state.read_bytes() == before
     assert not calls
+    assert "Local Chroma scanning is disabled" in result.output
     _assert_private_failure(result)
 
 
-def test_pending_checkpoint_failure_sends_nothing_and_preserves_prior(
+def test_disabled_new_scan_never_writes_pending_checkpoint(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
@@ -1042,13 +983,14 @@ def test_pending_checkpoint_failure_sends_nothing_and_preserves_prior(
 
     result = CliRunner().invoke(cli.app, args)
 
-    assert result.exit_code == cli.EXIT_MONITOR_STATE
+    assert result.exit_code == cli.EXIT_CONNECTOR_UNAVAILABLE
     assert events == []
     assert state.read_bytes() == before
+    assert "Local Chroma scanning is disabled" in result.output
     _assert_private_failure(result)
 
 
-def test_transport_failure_retains_same_delivery_id_and_advances_backoff(
+def test_disabled_new_scan_never_attempts_transport_or_advances_state(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
@@ -1076,14 +1018,10 @@ def test_transport_failure_retains_same_delivery_id_and_advances_backoff(
 
     result = CliRunner().invoke(cli.app, args)
 
-    assert result.exit_code == cli.EXIT_WEBHOOK
-    assert state.read_bytes() != before
-    persisted = json.loads(state.read_text(encoding="utf-8"))["pending_alert"]
-    assert persisted["attempts"] == 1
-    assert deliveries == [persisted["delivery_id"]]
-    normalized = " ".join(result.output.split())
-    assert "Webhook delivery failed." in normalized
-    assert "retained for a bounded retry" in normalized
+    assert result.exit_code == cli.EXIT_CONNECTOR_UNAVAILABLE
+    assert state.read_bytes() == before
+    assert deliveries == []
+    assert "Local Chroma scanning is disabled" in result.output
     assert "Webhook response accepted" not in result.output
     assert "Exposure change detected" not in result.output
     _assert_private_failure(result)
@@ -1103,7 +1041,7 @@ def test_non_alert_monitor_paths_never_prepare_or_send_webhook(
     monkeypatch.setattr(
         detection, "detect", lambda text, locale=None: list(current_findings)
     )
-    _patch_source(monkeypatch, [SYNTHETIC_ITEM])
+    source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
     if run_kind == "initialize":
         monitoring.generate_key_file(str(tmp_path / "monitor-key.json"))
     else:
@@ -1112,6 +1050,9 @@ def test_non_alert_monitor_paths_never_prepare_or_send_webhook(
     _add_webhook_pair(args, tmp_path)
     if run_kind == "initialize":
         args.append("--initialize")
+        before = None
+    else:
+        before = state.read_bytes()
     calls = []
     monkeypatch.setattr(
         monitoring, "prepare_webhook_request", lambda *args, **kwargs: calls.append("prepare")
@@ -1122,23 +1063,25 @@ def test_non_alert_monitor_paths_never_prepare_or_send_webhook(
 
     result = CliRunner().invoke(cli.app, args)
 
-    assert result.exit_code == 0
-    assert state.exists()
+    assert result.exit_code == cli.EXIT_CONNECTOR_UNAVAILABLE
+    assert not source_calls
     assert not calls
     if run_kind == "initialize":
-        assert "baseline initialized" in result.output
+        assert not state.exists()
     else:
-        assert "No new exposure." in result.output
+        assert state.read_bytes() == before
+    assert "Local Chroma scanning is disabled" in result.output
+    assert not any(signal in result.output for signal in SUCCESS_SIGNALS)
 
 
-@pytest.mark.parametrize("failure", ["monitor-key", "detection"])
-def test_configured_webhook_never_sends_on_key_state_or_detection_failure(
+@pytest.mark.parametrize("failure", ["monitor-key", "disabled-new-scan"])
+def test_configured_webhook_never_sends_on_key_state_failure_or_disabled_scan(
     monkeypatch, tmp_path, failure
 ):
     monkeypatch.setattr(cli, "validate_detection_runtime", detection.normalize_locale)
     source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
     args, state = _command_args("monitor", tmp_path)
-    if failure == "detection":
+    if failure == "disabled-new-scan":
         _prepare_valid_monitor_state(tmp_path)
         monkeypatch.setattr(
             detection,
@@ -1159,11 +1102,13 @@ def test_configured_webhook_never_sends_on_key_state_or_detection_failure(
     result = CliRunner().invoke(cli.app, args)
 
     expected = (
-        cli.EXIT_MONITOR_STATE if failure == "monitor-key" else cli.EXIT_DETECTION_RUNTIME
+        cli.EXIT_MONITOR_STATE
+        if failure == "monitor-key"
+        else cli.EXIT_CONNECTOR_UNAVAILABLE
     )
     assert result.exit_code == expected
     assert not calls
-    assert len(source_calls) == (0 if failure == "monitor-key" else 1)
+    assert not source_calls
     if before is not None:
         assert state.read_bytes() == before
     _assert_private_failure(result)
@@ -1179,6 +1124,7 @@ def test_monitor_help_documents_authenticated_https_and_breaking_exit_code():
     assert "authenticated" in normalized
     assert "version-3" in normalized
     assert "protocol-v2" in normalized
-    assert "5 = webhook pending/configuration/preparation/delivery failure" in normalized
+    assert "5 = webhook pending/configuration/preparation/ delivery failure" in normalized
+    assert "6 = direct Chroma scanning disabled" in normalized
     assert "Slack" not in normalized
     assert "Discord" not in normalized

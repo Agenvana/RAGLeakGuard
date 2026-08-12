@@ -1,4 +1,8 @@
-"""End-to-end clinic-scan evaluation with ground truth.
+"""Frozen historical clinic-scan evaluation source with ground truth.
+
+The current connector fails closed, so this script is not a current runnable scan
+workflow. Use it only from the historical snapshot documented in
+``docs/BENCHMARK_REPRODUCIBILITY.md`` and never against a real source store.
 
 Seeds a synthetic AU dental-clinic Chroma store (seeded Faker → reproducible),
 reads it back through the real connector, and measures per-PII-type coverage:
@@ -69,8 +73,9 @@ def main(n, store):
     col.add(ids=list(records), documents=[r["text"] for r in records.values()],
             metadatas=[{"record_id": rid} for rid in records])
 
-    items = list(read_chroma(store))  # end-to-end: through the real connector
-    print(f"Read back {len(items)} records through the Chroma connector.\n")
+    # Historical snapshot only: the current entry point raises before source access.
+    items = list(read_chroma(store))
+    print(f"Historical connector read {len(items)} synthetic records.\n")
 
     for locale in (None, "au"):
         coverage = {k: [0, 0, 0] for k in ("name", "email", "phone", "dob", "medicare", "address")}
