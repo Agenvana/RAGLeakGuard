@@ -8,111 +8,100 @@
 
 [English](README.md) | **繁體中文**
 
-> 掃描你的 AI 向量資料庫中暴露的敏感資料——在它變成一場無法刪除的資料外洩之前。
+RAGLeakGuard 是早期開發中的靜態資料敏感資訊診斷安全專案。儲存庫仍包含偵測、風險政策、
+監控狀態及已驗證 webhook 元件，但**目前沒有任何可用的來源掃描連接器**。
 
-**RAGLeakGuard** 是一個 CLI 工具：連接你的向量資料庫（目前支援 Chroma，更多連接器開發中），讀取其中儲存的內容，偵測敏感資料（個資、醫療、金融），並產出**風險分級報告**。不需要改動你的應用程式——指向資料庫、執行掃描即可。
+## Chroma 安全通知
 
-> **它是什麼：**一個*資料盤點與合規*掃描器——回答合規負責人真正會問的問題：
-> *「我們的向量資料庫裡存放了哪些受監管的資料？我們能證明它可以被刪除嗎？」*
-> 唯讀操作，可安全地對正式環境執行。
->
-> **它不是什麼：**紅隊測試工具。它不會發動提示注入（prompt injection）或越獄攻擊——
-> 它稽核的是**靜態資料**，而不是模型在攻擊下的反應。
+直接掃描本機 Chroma 已停用。可執行的端點證據證實：ChromaDB 1.5.0 與 1.5.9 在建立
+client 或讀取時，可能修改持久化 store 檔案。其他 Chroma 版本尚未建立可接受的唯讀邊界。
+這是確切的測試範圍，不代表所有 Chroma 版本都已測試。
 
-> 🚧 早期開發中——公開打造（building in public）。尚未達到正式環境等級。
+[Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) 已以 `not planned` 延後，
+並未完成。以 snapshot 為基礎的支援正接受另一項可行性與安全審查；目前未實作，也不保證
+未來會提供。本專案不宣稱 Chroma 支援版本範圍、未來可用性、連接器完整性、來源唯讀或
+正式環境安全性。
 
-## 為什麼重要
+PyPI `0.1.0` 套件包含不安全的直接 Chroma 路徑，**不得用於 Chroma 掃描**。撤下該套件
+與發布修正版都需要人類維護者另行授權；此儲存庫變更沒有執行這些動作。
 
-RAG 系統會把你的私有資料嵌入（embed）到向量資料庫中。這些資料**可以從向量被還原**（embedding inversion 嵌入反推）、**難以刪除**（備份、副本、快取、微調模型），而且通常**沒有任何盤點清單**。RAGLeakGuard 幫你找出它們。
+## 目前命令行為
 
-## 安裝
+語法有效的 `scan --source chroma` 會以 exit code 6 和固定訊息停止；停止發生在 Chroma
+import、偵測器初始化、來源存取、報告處理及成功輸出之前。`read_chroma()` 不會檢查傳入
+物件，呼叫時會立即同步拋出公開的 `ChromaConnectorUnavailableError`。
 
-```bash
-pip install "ragleakguard[chroma,detect]"   # 掃描器 + Chroma 連接器 + 偵測引擎
-python -m spacy download en_core_web_sm      # 一次性安裝：NLP 模型（約 12 MB）
+`monitor` 會先驗證 key 與 state。若已驗證的狀態含有 WP6 pending alert，既有的設定、
+backoff、retry、transport、ambiguous-delivery 及原子清除復原流程會在不開始新掃描的情況下
+執行。若沒有 pending alert，且原本將開始新掃描，`monitor` 會以 exit code 6 停止，不修改
+狀態，也不建立報告、alert 或 webhook。
+
+一般缺少選項、不支援的來源、格式錯誤或不支援的 locale 仍以 exit code 2 結束。監控 key／
+state 錯誤維持 exit code 4；pending alert 與 webhook 錯誤維持 exit code 5。
+
+```text
+Local Chroma scanning is disabled because executable endpoint evidence proved that ChromaDB 1.5.0 and 1.5.9 may modify durable store files during client construction or reads, while other versions have not established an acceptable read-only boundary. No report, monitor state, or webhook was created or replaced.
 ```
 
-> **Python 3.9 提示：**相依套件已鎖定版本（`spaCy<3.8`、`numpy<2`），會直接使用預編譯 wheel——不需要從原始碼編譯。
+直接存取停用期間，文件刻意不提供可執行的 Chroma scan 或 monitor quickstart。
 
-<details>
-<summary>或從原始碼安裝（開發用）</summary>
+## 開發環境
+
+Chroma runtime extra 已移除。以下只安裝套件、偵測堆疊與測試工具，不會提供來源掃描連接器。
 
 ```bash
 git clone https://github.com/Agenvana/RAGLeakGuard.git
 cd RAGLeakGuard
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip          # 新建立的 venv 內建的 pip 較舊；可編輯安裝需要較新版本
-pip install -e ".[chroma,detect,dev]"
+python -m venv .venv
+# 依作業系統啟用環境。
+python -m pip install --upgrade pip
+python -m pip install -e ".[detect,dev]"
 python -m spacy download en_core_web_sm
-```
-</details>
-
-## 快速開始（約 2 分鐘）
-
-```bash
-# 1. 建立一個充滿「假」敏感紀錄的測試向量資料庫
-python scripts/seed_synthetic.py                          # -> ./sample_store（100 筆合成診所紀錄）
-
-# 2. 掃描它——預設啟用全球 + 美國識別器
-ragleakguard scan --source chroma --path ./sample_store --report report.md
-
-# 3. 測試資料是澳洲格式，加上 AU 在地包（locale pack）可獲得完整覆蓋
-ragleakguard scan --source chroma --path ./sample_store --locale au --report report.md
-
-# 4. 打開 report.md（摘要、依類型與嚴重度的發現、風險等級、修補建議）
+python -m pytest -q
 ```
 
-## Monitor（持續監控）
-
-單次掃描告訴你今天的狀態；`monitor` 告訴你狀態何時改變：
-
-```bash
-# 產生本機 256-bit 監控金鑰；絕不覆寫既有路徑
-ragleakguard generate-monitor-key --output rlg-monitor-key.json
-
-# 產生新的 protocol-v2 webhook 密鑰；先把新的 key ID 與密鑰配置到
-# 每個 receiver 節點，再讓 sender 指向此新檔案
-ragleakguard generate-webhook-secret --output rlg-webhook-secret.json
-
-# 明確授權建立新的、已驗證的 version-3 基準線
-ragleakguard monitor --source chroma --path ./sample_store --locale au \
-  --key-file rlg-monitor-key.json --state rlg-state.json --initialize
-
-# 之後的執行會先以原子方式提交單一項目的 outbox，再嘗試最小化且已簽署的警報；
-# receiver 必須驗證 protocol v2，並以 durable 方式去除重複 delivery ID
-ragleakguard monitor --source chroma --path ./sample_store --locale au \
-  --key-file rlg-monitor-key.json --state rlg-state.json \
-  --webhook https://receiver.example.com/rlg \
-  --webhook-secret-file rlg-webhook-secret.json
-
-# 排入 cron（每小時）：exit 1 = 本次掃描發現暴露變更；exit 5 = pending/backoff、
-# webhook 設定、建構、傳輸、重新導向或回應失敗
-0 * * * *  ragleakguard monitor --source chroma --path /srv/store --key-file /etc/rlg/monitor-key.json --state /var/lib/rlg/state.json --webhook https://receiver.example.com/rlg --webhook-secret-file /etc/rlg/webhook-secret.json
-```
-
-已驗證的 version-3 狀態檔包含完整長度、以金鑰產生的範圍／紀錄 token、發現層級指紋、驗證計數，以及 `pending_alert: null` 或一個有界且最小化的 outbox 項目。該項目只含固定 event/version、隨機 128-bit delivery ID、已完成失敗嘗試次數與下次重試時間；不含 URL、key ID、密鑰、signature、來源／store 路徑、finding、count、response 或 exception。Version 1 仍會在不修改檔案的情況下被拒絕。有效且已驗證的 version-2 狀態會被視為沒有 pending alert，並只在下一次成功的原子狀態轉換時移轉；這無法復原 version 2 時期已遺失的警報。缺少、無效、不相符或未通過驗證的金鑰／狀態會在來源存取前以 exit code 4 結束。建立基準線必須使用 `--initialize`，且不會覆寫既有路徑。
-
-Webhook 本體固定為同一個 60-byte protocol-v2 暴露變更事件。嚴格的 header allowlist 新增 persisted delivery ID；v2 signature 同時驗證該 ID、精確 URL target、本體、timestamp 與每次重新產生的 nonce。HTTPS 憑證鏈與主機名稱驗證不可停用、絕不跟隨重新導向，且 DNS、連線、TLS、傳送與回應 headers 共用一個 10 秒 monotonic deadline。Unsigned 設定及舊式 v1 密鑰檔／receiver 會 fail closed，不會自動 downgrade。Slack／Discord incoming webhook 不相容；Zapier、n8n 或其他下游服務必須先經過能驗證並 durable deduplicate 此協定的 receiver／gateway。
-
-只要 alert 仍 pending，後續執行就不會存取來源。到期的執行最多嘗試一次，沿用同一 delivery ID，並重新產生 timestamp、nonce 與 signature。失敗會以有界 exponential full-jitter backoff 保留；不會因年齡或嘗試次數而默默丟棄。只有可接受的 `2xx` response headers 才允許原子清除本機 pending alert；清除失敗屬於 ambiguous delivery，之後可能重複傳送。Receiver 必須使用 durable、atomic deduplication，但這不證明 exactly-once processing、無條件 at-least-once delivery、下游處理或人員通知。此版本只支援單一 destination 與單一 pending alert；receiver outage 可無限期阻擋後續掃描，且沒有 dead-letter 管理。移轉、cutover、retry、復原與殘餘風險請見 [webhook 協定](docs/WEBHOOK_PROTOCOL.md)與[監控金鑰與狀態契約](docs/MONITOR_STATE.md)（英文）。
+確定性的 Chroma seed／evaluation 腳本只保留作為歷史研究及開發 fixture。它們不是受支援的
+掃描流程，絕不可用於真實、正式環境、客戶或其他敏感 store。
 
 ## 偵測能力
 
-- **預設：**全球 + 美國識別器——SSN、銀行帳號、駕照、信用卡、Email、電話、姓名、地點、日期、IP、加密貨幣地址……
-- **在地包（`--locale`）：**`au`（Medicare / 電話 / TFN / ABN / ACN）——目前唯一已實作、可選用的國家在地包。其他在地包僅列於[規劃](ROADMAP.md)，尚未實作。
+- **預設函式庫設定：**全域與美國 Presidio recognizer。
+- **在地包（`--locale`）：**`au` 是目前唯一已實作、可選用的國家在地包。
 
-語系代碼不分大小寫，並會忽略前後空白。格式錯誤或不支援的語系輸入會以 exit code 2 結束。如果偵測相依套件或所需的 spaCy 模型無法載入，使偵測執行階段無法完成初始化，命令會以 exit code 3 結束。兩項驗證都在存取來源前執行，因此失敗時不會寫入報告或監控狀態，也不會傳送 webhook。
+偵測是 best-effort。偵測函式庫的結果不能證明資料安全、合規或不含敏感資訊。缺少模型時，
+Presidio 可能在初始化期間嘗試取得模型；runtime 下載控制與精確模型鎖定仍是待加強事項。
+停用的新掃描 CLI 路徑不會初始化此 runtime。
 
-缺少所需模型時，Presidio 可能會在初始化期間嘗試取得模型。RAGLeakGuard 目前未覆寫或停用 Presidio 的這項行為。如何控管執行階段模型取得，以及如何精確鎖定模型，仍是另外的殘餘強化議題。
+## Monitor 復原
 
-## 📊 AI 資料安全報告（The AI Data Security Report）
+已驗證的 version-3 state 與 protocol-v2 webhook 設計記錄於
+[monitor state contract](docs/MONITOR_STATE.md) 與 [webhook protocol](docs/WEBHOOK_PROTOCOL.md)。
+Pending recovery 不會存取 Chroma，也不能建立新的掃描衍生 alert。`2xx` 回應只允許已核准的
+原子 outbox-clear 轉換；這不證明 exactly-once delivery、下游處理或人員通知。
 
-每月發布、方法公開的報告，實測 AI 資料管線的真實外洩情況——使用本工具的基準測試腳本、以合成資料產出，可在你的機器上重現。**第 1 期（2026 年 7 月）：[Your AI's Privacy Filter Speaks American. It Missed 1 in 3 Australian IDs.](reports/AI-Data-Security-Report-01-2026-07.pdf)** 所有期數：[reports/](reports/)。
+Credential helper 仍可使用：
 
-## 路線圖
+```bash
+ragleakguard generate-monitor-key --output rlg-monitor-key.json
+ragleakguard generate-webhook-secret --output rlg-webhook-secret.json
+```
 
-見 **[ROADMAP.md](ROADMAP.md)**——接下來包括更多連接器（Pinecone、pgvector）、更多在地包（包含台灣：身分證字號與健保卡號），以及 **Fix** 層（**專利申請中 / patent pending**）：在嵌入*之前*就將敏感資料代碼化（tokenize），原始值只存放於安全保險庫（vault）；單一撤銷操作即可讓某人的資料在所有副本——包含備份、快取、複本——同時且不可逆地失效；再由 **Prove** 層產出可供稽核、附驗證重掃的刪除證明報告。
+復原需要原本的 `--key-file`、已驗證的 `--state`；若有 pending alert，另需 protocol-v2
+`--webhook-secret-file` 與已驗證的 HTTPS receiver。使用 `--initialize` 建立新 baseline 已停用，
+因為它需要開始新掃描。無效 key／state 以 exit code 4 結束；pending 設定、backoff、retry、
+preparation、transport 或 response 失敗以 exit 5 結束。Slack 與 Discord incoming webhook
+不相容，因為復原需要 protocol-v2 專用 verifier 及 durable delivery-ID deduplication。
+
+## 歷史研究
+
+2026 年 7 月的 [AI Data Security Report](reports/AI-Data-Security-Report-01-2026-07.pdf)
+及其來源歷史是凍結的歷史證據，不代表目前連接器可用或安全。詳見
+[benchmark reproducibility](docs/BENCHMARK_REPRODUCIBILITY.md)。
+
+## 路線圖與非保證事項
+
+詳見 [ROADMAP.md](ROADMAP.md)。規劃中的連接器、snapshot 可行性工作、Prevent/Fix、Prove、
+Control Plane、刪除證明、合規、認證及 assurance 介面都尚未實作。
 
 ## 授權條款
 

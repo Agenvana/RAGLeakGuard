@@ -1,87 +1,71 @@
 # Threat model
 
-**Baseline:** runtime behavior through `d33dba52e04923d5e4912d4637ce84d19dd8884f` was independently inspected on 2026-08-10. The durable-outbox additions described here are implemented in this change and remain subject to independent security review before merge. RAGLeakGuard is an alpha data-inventory scanner, not a prevention, erasure, or compliance system.
+**Baseline:** WP7A begins at `e9fdbbe456386b052f35de2c180901275aa6747c`. RAGLeakGuard is an
+alpha security project. No source-scanning connector is currently available.
 
 ## Scope
 
 In scope:
 
-- local `scan` and `monitor` CLI execution;
-- the local Chroma connector;
-- Presidio/spaCy detection and post-processing;
-- Markdown reports, console messages, JSON monitor state, and webhook payloads;
-- benchmark/demo scripts, package dependencies, CI, and release artifacts.
+- synchronous library disablement of direct local Chroma access;
+- `scan` and `monitor` CLI validation and precedence;
+- preservation of reports, authenticated monitor state, and the WP6 pending-alert outbox;
+- detection, risk-policy, report, console, package, documentation, and release claim boundaries;
+- protocol-v2 pending-alert recovery and delivery.
 
-Out of scope because it is not implemented:
+Out of scope because it is unavailable or not implemented:
 
-- prompt-injection, jailbreak, model-response, or retrieval authorization testing;
-- Pinecone or any connector other than local Chroma;
-- Prevent/Fix tokenization, vault/KMS, deletion, erasure, or proof;
-- a hosted or private Control Plane, multi-tenancy, RBAC/SSO, billing, or fleet operation;
-- certification or a guarantee of legal compliance.
+- direct or snapshot-backed Chroma source scanning;
+- every other source connector;
+- connector pagination, metadata expansion, consistency receipts, and version support;
+- Prevent/Fix, erasure proof, Control Plane, certification, or compliance guarantees.
 
-## Assets and security objectives
+## Evidence and security decision
 
-| Asset | Objective |
+Executable endpoint tests established durable store mutation for ChromaDB 1.5.0 and 1.5.9 during
+client construction or reads. Other Chroma versions have not established an acceptable read-only boundary.
+Therefore, direct local Chroma entry points fail closed without importing Chroma or
+accessing the source. [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred,
+not completed. Snapshot-backed support remains under separate review and is unavailable.
+
+PyPI 0.1.0 contains the unsafe direct path and must not be used for Chroma scanning.
+
+## Assets and objectives
+
+| Asset | Security objective |
 |---|---|
-| Source documents and metadata | Read only what is required; do not create an unintended copy or mutation. |
-| Detected values and spans | Keep process-local and out of persistent/external outputs unless an explicitly reviewed interface requires them. |
-| Store path, collection/tenant names, record IDs, and exception text | Treat as potentially sensitive metadata; minimise and do not disclose by default. |
-| Scan completeness and risk result | Never present incomplete, inconsistent, or failed work as success. |
-| Monitor state and one pending alert | Preserve checkpoint/outbox integrity, commit an alert before delivery, block newer scans while pending, and persist no sensitive source/finding/request data. |
-| Operator monitor key | Keep explicit, confidential, purpose-bound, recoverable, and out of every output; never turn key loss or rotation into a clean result. |
-| Dedicated webhook signing secret | Keep separate from monitor-state keys, purpose-bound, explicitly provisioned, recoverable/rotatable, and absent from output. |
-| Webhook request authenticity, recovery, and privacy | Emit only the fixed event plus public protocol metadata, authenticate exact bytes including delivery ID, retry without silently discarding, and avoid false delivery/processing claims. |
-| Benchmarks and released reports | Bind claims to exact source, environment, raw evidence, and immutable checksums. |
-| Build and release artifacts | Prevent secret inclusion, dependency substitution, version drift, and unauthorized publication. |
+| Supplied source object/path | Do not inspect it in `read_chroma()` and do not access it as a filesystem path on disabled CLI new-scan paths. |
+| Source store | Do not import or construct Chroma, execute embeddings, or attempt network access. |
+| Existing report/state | Preserve bytes exactly; leave absent artifacts absent; create no temporary artifact. |
+| Operator-facing result | Exit 6 with one static message; emit no clean, scan, baseline, report, change, or delivery success signal. |
+| Monitor key and authenticated state | Preserve validation precedence, static failures, checkpoint integrity, and scope binding. |
+| Existing pending alert | Recover without a new scan; only an accepted delivery may authorize the existing atomic clear transition. |
+| Package and public claims | Do not install or advertise a Chroma runtime connector or claim read-only, supported-version, snapshot, completeness, or production safety. |
 
 ## Actors and assumptions
 
-- The operator controls the local command, paths, configuration, state location, and webhook URL.
-- The operator provisions and protects the monitor key, uses the same source/path spelling for an existing scope, prevents overlapping jobs, and deliberately authorizes any re-baseline.
-- The operator separately provisions the webhook signing secret at the sender and receiver, protects both copies, maps its random key ID, and controls the HTTPS endpoint.
-- The vector store may contain hostile, malformed, very large, or unexpectedly changing content.
-- A local user, backup reader, log collector, webhook receiver, compromised dependency, or CI actor may gain access to outputs.
-- The operator may reasonably but incorrectly treat a zero exit, clean report, or successful alert message as proof of completion.
-- The scanner process is not a sandbox. Anyone who controls its Python environment or dependencies can act with the process's OS permissions.
+- The operator controls command arguments and local artifact locations.
+- Supplied objects, source paths, state, and stores may be hostile or privacy-sensitive.
+- A local user, logger, dependency, receiver, or CI actor may observe outputs.
+- The process is not a sandbox; a compromised dependency inherits process permissions.
+- The operator may misread a zero exit or familiar success phrase as evidence of a completed scan.
 
-## Trust boundaries and data flow
+## Threats, controls, and residual risks
 
-1. Chroma documents and metadata cross into the local Python process.
-2. Raw text crosses into Presidio/spaCy and is represented in in-memory findings.
-3. Aggregate report data plus the source path crosses into a Markdown file.
-4. The operator key crosses from a permission-restricted local file into process memory. Purpose-separated derived keys are not persisted.
-5. Keyed store/record/finding-derived tokens, counts, construction/key identifiers, an optional bounded pending alert, and an authenticator cross into local version-3 state. The pending entry adds only event/version, random delivery ID, failed-attempt count, and next retry time. Raw source/store/state paths, collection/record identifiers, finding types/values/counts, document text, spans, URL, secret/key ID, attempt bytes, response, exceptions, and key bytes do not.
-6. A dedicated v2 webhook secret crosses from its restricted file into process memory. The exact HTTPS target, fixed 60-byte event, public key/delivery IDs, fresh timestamp/nonce, and full HMAC cross the network boundary; source/store data, findings, counts, record tokens, monitor key, and state path do not.
-7. The receiver's TLS endpoint, verifier, trusted clock, key mapping, atomic replay cache, durable atomic delivery-ID store, logs, processor transaction, and downstream behavior form separate trust boundaries.
-8. Dependencies, models, source, and packages cross external supply-chain boundaries during setup and release.
-
-## Threats, current controls, and gaps
-
-| Threat | Current control | Known limitation / planned control |
+| Threat | Current control | Residual risk / limitation |
 |---|---|---|
-| Raw PII, tenant metadata, or request material copied into monitor state | Version-3 state has an exact root/pending allowlist and authenticates the checkpoint plus one bounded outbox entry. Recursive canaries cover raw paths, collection/tenant names, record IDs, finding types/values/counts, document text/spans, URLs, secrets, key IDs, attempt timestamps/nonces/signatures/bytes, responses, and exceptions. | Keyed tokens become linkable/forgeable within a compromised or reused monitor-key scope. Low-entropy identifiers may be guessed after key compromise. Process memory still contains source and attempt material during a run. |
-| Raw or tenant-revealing data exposed through console/errors/webhook | Monitor and webhook failures use static messages without exceptions, paths, endpoint details, Host, key IDs, signed bytes, response data, tokens, types, or counts. The webhook body is an exact fixed event; the header allowlist contains only protocol fields. Monitor change output is static. Recursive canaries cover request/body/header/repr/console success and failure paths. | Scan/report console output and reports still print configured paths. Endpoint metadata is visible to DNS/network/TLS infrastructure. Compromised process/runtime/receiver components can access in-memory data or secret material. |
-| Incomplete scan reported as success | Unsupported/malformed locales and unavailable detection runtimes raise typed errors. Both CLI commands preflight before reading the source; locale/usage failures exit 2, while dependencies or a required model that cannot be loaded and prevent runtime initialization cause exit 3 without a report, state update, or webhook. | Connector completion evidence, bounds, cancellation, and concurrent-mutation handling remain **planned**. |
-| False negatives mistaken for absence of sensitive data | Reports state that detection is best-effort. The implemented `au` locale pack is opt-in, and unimplemented packs are not registered or advertised. | No detector is complete. Operators must not use a clean scan as proof of safety. |
-| Sensitive values exist only in Chroma metadata | Connector output includes metadata. | The current CLI detects document text only; metadata fields are not analyzed. Metadata coverage is **planned** connector hardening. |
-| Store availability impact or memory exhaustion | Connector code performs read/list/get calls only. | Collections and CLI items are materialized without pagination/bounds. Streaming, limits, cancellation, and completeness evidence are **planned**. |
-| Source store mutation | Application code contains no intended add/update/delete operation in the scan path. | Dependency-side behavior and supported Chroma versions are not independently proven. Validate in staging and back up critical stores. |
-| Sensitive value changes without a monitor event | Exact type/value identities use typed UTF-8 framing, purpose-separated HMAC-SHA-256 finding tokens, and a full-length keyed aggregate over a sorted multiset. Tests cover equal-type/equal-count replacement, additions/removals, reorder, and duplicate multiplicity. | Score/position-only movement is deliberately ignored. Detector false negatives/instability and non-zero HMAC collision probability remain. Forced cross-run token collisions cannot be distinguished without raw history. |
-| State/outbox tampering, corruption, incompatible migration, rotation, or false re-baseline | Strict v3 schema/bounds, complete-body authentication, key/scope binding, no-overwrite initialization, safe authenticated-v2 transition, fail-closed v1 rejection, and static remediation precede source access. Temporary write, file `fsync`, atomic replacement, pending update/clear, and v2 migration failures are injected. | No rollback counter detects replacement with an older valid state. Host filesystem/power-loss behavior, local key compromise, insecure backups, and overlapping scheduled writers remain risks. V2 migration cannot recover historical lost alerts. |
-| Monitor key exposure, loss, weak provisioning, or unsafe rotation | The helper generates 256 random bits with `secrets`, a random non-secret key ID, strict purpose/construction fields, exclusive creation, and POSIX `0600`; the loader requires exact 256-bit material and rejects broad POSIX permissions. Key IDs/constructions/authentication prevent silent rotation. | Entropy cannot be verified after key creation. Portable Python cannot prove a restrictive Windows DACL. Key backups/recovery/retirement are operator responsibilities; key loss requires restoration or an explicit new-path baseline with lost cross-key history. |
-| Alert tampering, forgery, or unsigned compatibility fallback | Exact typed framing and HMAC-SHA-256 authenticate method, authority, request target, allowlisted headers, timestamp, nonce, and the same immutable 60-byte body that is transmitted. The secret is dedicated and purpose-bound; unsigned configuration fails closed. The verifier uses constant-time digest comparison. | Compromise of either shared-secret copy permits forgery. HMAC provides no confidentiality, receiver trust, or downstream-processing proof. Python modules have no separately versioned stable SDK. |
-| Replay or duplicate delivery | The verifier authenticates first, enforces inclusive `±300`-second freshness, atomically rejects accepted `(key_id, nonce)`, then calls a shared durable atomic delivery-ID interface. Authenticated duplicate delivery IDs with fresh nonces return duplicate success without repeating the processor. | HMAC alone prevents neither replay nor duplication. Clock/cache loss, delivery-store retention expiry/loss, multi-node inconsistency, and a crash/non-atomic boundary between processing and dedup commit can duplicate effects. Process-local reference stores are not production-durable. |
-| Redirect, downgrade, response-body, client-default, or unbounded transport behavior | URL preflight permits only bounded ASCII HTTPS URLs without credentials/fragments; TLS verification is ordinary and cannot be disabled. A raw HTTP/1.1 client emits the exact header allowlist, follows no redirects, reads only through the response-header terminator, accepts only `2xx`, and uses one monotonic deadline across DNS/connect/TLS/write/headers. | The operator controls the endpoint, so HTTPS URLs can still target internal services. CA-store/runtime compromise is out of scope. A platform DNS call timed out by the caller can remain in a daemon thread until the OS resolver returns. |
-| Alert loss, duplicate delivery, outage blockage, or ambiguous crash | Checkpoint plus pending alert is authenticated and atomically replaced before attempt construction/network. Pending state blocks source access. One stable 128-bit delivery ID survives retries; attempt timestamp/nonce/signature is fresh. Failed attempts use non-zero CSPRNG full-jitter exponential backoff capped at one hour and are never age/attempt-discarded. Only accepted `2xx` plus successful atomic clear emits acceptance. | Send/response/clear crashes remain ambiguous and can duplicate. Receiver outage or a permanently pending alert blocks newer scans indefinitely. There is one pending alert/destination and no dead-letter administration, overlapping-writer coordination, unconditional at-least-once, or exactly-once guarantee. |
-| Risk score misclassification | The source-controlled [`RLG-ID-RISK@1.0.0`](RISK_POLICY.md) contract explicitly covers every current default and implemented-locale identifier type. It records its version in each new report; uses exact inclusive threshold comparisons; treats unknown/custom types as visible `REVIEW` findings with conservative high-impact overall handling; rejects contradictory aggregates; and has golden matrix, boundary, combination, compatibility, privacy, and determinism tests. | Severity remains context-independent and the 0-3 score is ordinal, not a probability, harm estimate, compliance determination, or completeness proof. Aggregate validation cannot prove connector or detector completeness. Historical reports without attribution remain unversioned and require regeneration for a policy-attributed result. |
-| Dependency/model compromise or non-reproducible build | CI installs declared extras and a named spaCy model. | Presidio may attempt model acquisition at runtime when the model is absent. RAGLeakGuard does not currently override or disable this Presidio behavior. Runtime acquisition controls and exact model artifact/version pinning are separate residual hardening concerns, alongside unlocked dependency ranges, secret/dependency scans, provenance, and a finite test matrix. |
-| Historical report claim cannot be reproduced exactly | Fixed-seed scripts and the PDF are in Git. | Historical environment and raw public outputs are incomplete; see [Benchmark reproducibility](BENCHMARK_REPRODUCIBILITY.md). |
+| Chroma mutates a production source during inspection | Every direct new-scan entry point is disabled before import, client construction, filesystem access, embeddings, or socket activity. | Snapshot feasibility is unresolved and no connector is available. |
+| Hostile path leaks through evaluation or errors | `read_chroma()` is a non-generator and raises one static public exception without coercion, formatting, attribute access, comparison, iteration, hashing, `str`, or `repr`. CLI output is also static. | Monitor scope authentication must process the operator-provided path string before pending recovery; this is not filesystem source access. |
+| Disabled scan corrupts an artifact or creates false evidence | Exit 6 precedes report work and scan-derived state transitions. Byte-preservation and absent-artifact tests cover reports, state, and temporary files. | Host filesystem compromise remains outside the process contract. |
+| Disabled monitor masks key/state or pending-alert failure | Webhook configuration and authenticated key/state validation retain precedence. A pending alert retains WP6 configuration, backoff, retry, transport, ambiguous-clear, and recovery semantics. | A permanently pending alert can block new scans indefinitely; new scans are independently disabled. |
+| Pending recovery begins a source scan or creates a new alert | Recovery terminates after one due attempt or one established failure branch. It may only update retry metadata or atomically clear the existing pending entry. | Network-send and clear crashes remain ambiguous and may duplicate delivery. |
+| Chroma re-enters through packaging | The Chroma optional dependency is removed; wheel/sdist metadata and clean no-Chroma installation are tested. | PyPI 0.1.0 remains unsafe for Chroma scanning until a separately authorized human action changes public package state. |
+| Public prose overstates capability | English, Traditional Chinese, CLI help, architecture, threat model, security, contribution, release, and package claims are regression tested. | Historical artifacts require context and must not be read as current behavior. |
+| Detector false negatives mistaken for absence | Disabled CLI paths produce no clean report. Library detection remains explicitly best-effort. | No detector is complete; importing callers remain responsible for raw in-memory findings. |
+| Alert replay or duplicate delivery | Existing HMAC framing, freshness, nonce cache, stable delivery ID, and durable atomic receiver interface remain unchanged. | Exactly-once, unconditional at-least-once, downstream processing, and human notification are not proved. |
 
-## Security review triggers
+## Release and review triggers
 
-Changes to detection/risk policy, connectors, persistence, fingerprints, reports, logs, errors, webhooks, dependencies, releases, migrations, cryptography, or public security/compliance wording require independent review. Tests must use synthetic privacy canaries and cover failure behavior, not only successful output.
-
-## Residual-risk rule
-
-No documentation or successful test run converts these limitations into a guarantee. A release or pull request must state what was tested, on which commit/configuration, what data crossed each boundary, and what remains unproved. See the complete [webhook protocol](WEBHOOK_PROTOCOL.md) for the language-neutral verifier and key-lifecycle contract.
+Connector, state, report, dependency, release, egress, cryptographic, and public security-claim changes
+require independent review. A passing test suite is evidence for the named commit and environment only.
+It does not establish production safety or authorize merge, tag, package publication, yank, or release.

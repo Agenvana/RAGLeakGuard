@@ -12,6 +12,7 @@ from ragleakguard.detect import (
     MissingDetectionDependencyError,
     MissingDetectionModelError,
     UnsupportedLocaleError,
+    normalize_locale,
     validate_detection_runtime,
 )
 
@@ -20,13 +21,18 @@ EXIT_USAGE = 2
 EXIT_DETECTION_RUNTIME = 3
 EXIT_MONITOR_STATE = 4
 EXIT_WEBHOOK = 5
+EXIT_CONNECTOR_UNAVAILABLE = 6
 
-app = typer.Typer(add_completion=False, no_args_is_help=True, help="Scan your AI's vector database for exposed sensitive data.")
+app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    help="Direct source-store scanning is disabled; credential helpers remain available.",
+)
 
 
 @app.callback()
 def main():
-    """ragleakguard — find sensitive data exposed in your AI's vector store."""
+    """RAGLeakGuard safety boundary and local credential helpers."""
 
 
 def _abort_detection(error: DetectionError) -> None:
@@ -55,6 +61,22 @@ def _validated_locale(locale: Optional[str]) -> Optional[str]:
         return validate_detection_runtime(locale)
     except DetectionError as error:
         _abort_detection(error)
+
+
+def _validated_locale_syntax(locale: Optional[str]) -> Optional[str]:
+    """Preserve locale usage validation without initializing detection."""
+    try:
+        return normalize_locale(locale)
+    except DetectionError as error:
+        _abort_detection(error)
+
+
+def _abort_chroma_unavailable() -> None:
+    """Emit the exact static disabled-path message and fail closed."""
+    from ragleakguard.connectors import CHROMA_DISABLED_MESSAGE
+
+    typer.echo(CHROMA_DISABLED_MESSAGE)
+    raise typer.Exit(EXIT_CONNECTOR_UNAVAILABLE)
 
 
 def _abort_monitor(error) -> None:
@@ -202,66 +224,35 @@ def generate_webhook_secret(
 
 @app.command()
 def scan(
-    source: str = typer.Option(..., "--source", help="Vector store type: chroma | pinecone"),
-    path: str = typer.Option(None, "--path", help="Path or connection string for the store"),
-    report: str = typer.Option("report.md", "--report", help="Where to write the report"),
+    source: str = typer.Option(
+        ..., "--source", help="Source type: chroma (direct scanning is disabled)"
+    ),
+    path: str = typer.Option(
+        None, "--path", help="Required store-scope value; the source is not accessed"
+    ),
+    report: str = typer.Option(
+        "report.md", "--report", help="Report path; not accessed while scanning is disabled"
+    ),
     locale: str = typer.Option(
         None,
         "--locale",
         help="Locale pack: au (case-insensitive; surrounding whitespace ignored)",
     ),
 ):
-    """Scan a vector store and report exposed sensitive data.
+    """Validate a Chroma scan request, then fail closed before source access.
 
-    Pipeline (being built): connector -> extract text -> detect -> risk-score -> report.
-
-    Exit codes: 0 = completed · 2 = usage/locale error · 3 = detection unavailable.
+    Exit codes: 2 = usage/locale error · 6 = direct Chroma scanning disabled.
     """
     source = source.lower()
     if source == "chroma":
-        from ragleakguard.connectors import read_chroma
-
         if not path:
             print("[red]--path is required for chroma (the store directory).[/]")
             raise typer.Exit(EXIT_USAGE)
-        locale = _validated_locale(locale)
-        items = list(read_chroma(path))
+        _validated_locale_syntax(locale)
+        _abort_chroma_unavailable()
     else:
-        print(f"[red]Source '{source}' isn't supported yet (try: chroma).[/]")
+        print(f"[red]Source '{source}' isn't supported.[/] No source connector is available.")
         raise typer.Exit(EXIT_USAGE)
-
-    if not items:
-        print(f"[bold]ragleakguard[/] read [bold green]0[/] item(s) from [bold]{source}[/] at '{path}'.")
-        raise typer.Exit(0)
-
-    from collections import Counter
-
-    by_type: Counter = Counter()
-    total = flagged = 0
-    try:
-        from ragleakguard.detect import detect
-
-        for it in items:
-            found = detect(it["text"], locale=locale)
-            if found:
-                flagged += 1
-            total += len(found)
-            by_type.update(f["type"] for f in found)
-    except DetectionError as error:
-        _abort_detection(error)
-
-    print(f"[bold]ragleakguard[/] read [bold green]{len(items)}[/] item(s) from [bold]{source}[/] at '{path}'.")
-    print(f"\n[bold red]⚠  {total}[/] sensitive finding(s) across [bold]{flagged}/{len(items)}[/] records:")
-    for entity, count in by_type.most_common():
-        print(f"   [yellow]{entity:<16}[/] {count}")
-
-    from ragleakguard.report import build_report
-
-    md = build_report(dict(by_type), len(items), flagged, source=source, path=path)
-    with open(report, "w", encoding="utf-8") as fh:
-        fh.write(md)
-    print(f"\n[green]✓[/] Risk-scored report written to [bold]{report}[/].")
-    raise typer.Exit(0)
 
 
 def _deliver_pending_alert(
@@ -331,8 +322,14 @@ def _deliver_pending_alert(
 
 @app.command()
 def monitor(
-    source: str = typer.Option(..., "--source", help="Vector store type: chroma | pinecone"),
-    path: str = typer.Option(None, "--path", help="Path or connection string for the store"),
+    source: str = typer.Option(
+        ..., "--source", help="Source type: chroma (new scans are disabled)"
+    ),
+    path: str = typer.Option(
+        None,
+        "--path",
+        help="Exact store-scope value for state authentication; source is not accessed",
+    ),
     locale: str = typer.Option(
         None,
         "--locale",
@@ -361,28 +358,30 @@ def monitor(
     initialize: bool = typer.Option(
         False,
         "--initialize",
-        help="Explicitly create a new baseline; never overwrites existing state",
+        help="Authorize baseline path validation; creation is disabled with new scans",
     ),
-    once: bool = typer.Option(True, "--once", help="Run one check or one pending delivery attempt"),
+    once: bool = typer.Option(
+        True,
+        "--once",
+        help="Run one pending delivery attempt or reach the disabled new-scan boundary",
+    ),
 ):
-    """Re-scan a store and alert on NEW or CHANGED sensitive findings since the last run.
+    """Recover an existing pending alert; fail closed before every new scan.
 
-    New baselines require --initialize. Every run requires --key-file.
+    Every run requires --key-file. New baselines and scans are unavailable.
 
-    Exit codes: 0 = initialized/no new exposure; 1 = new/changed findings;
-    2 = usage/locale error; 3 = detection unavailable; 4 = monitor key/state failure;
-    5 = webhook pending/configuration/preparation/delivery failure.
+    Exit codes: 0 = pending alert accepted and cleared; 2 = usage/locale error;
+    4 = monitor key/state failure; 5 = webhook pending/configuration/preparation/
+    delivery failure; 6 = direct Chroma scanning disabled.
     """
     source = source.lower()
     if source == "chroma":
-        from ragleakguard.connectors import read_chroma
-
         if not path:
             print("[red]--path is required for chroma (the store directory).[/]")
             raise typer.Exit(EXIT_USAGE)
-        locale = _validated_locale(locale)
+        _validated_locale_syntax(locale)
     else:
-        print(f"[red]Source '{source}' isn't supported yet (try: chroma).[/]")
+        print(f"[red]Source '{source}' isn't supported.[/] No source connector is available.")
         raise typer.Exit(EXIT_USAGE)
 
     from ragleakguard import monitor as mon
@@ -438,83 +437,7 @@ def monitor(
         )
         raise typer.Exit(0)
 
-    items = list(read_chroma(path))
-
-    from ragleakguard.detect import detect
-
-    try:
-        current = mon.build_snapshot(
-            items,
-            detect,
-            crypto,
-            scope_token,
-            locale=locale,
-        )
-    except DetectionError as error:
-        _abort_detection(error)
-    except mon.MonitorError as error:
-        _abort_monitor(error)
-
-    if previous is None:
-        try:
-            mon.save_state(
-                state,
-                current,
-                crypto,
-                scope_token,
-                initialize=True,
-            )
-        except mon.MonitorError as error:
-            _abort_monitor(error)
-        print("[bold]ragleakguard monitor[/] - baseline initialized.")
-        raise typer.Exit(0)
-
-    delta = mon.diff(previous["records"], current)
-    n_new, n_chg = len(delta["new"]), len(delta["changed"])
-    if n_new == 0 and n_chg == 0:
-        try:
-            mon.save_state(state, current, crypto, scope_token)
-        except mon.MonitorError as error:
-            _abort_monitor(error)
-        print(
-            "[green]OK[/] No new exposure."
-        )
-        raise typer.Exit(0)
-
-    if webhook_target is not None:
-        try:
-            pending_alert = mon.new_pending_alert()
-        except mon.WebhookError:
-            _abort_webhook_preparation()
-        try:
-            mon.save_state(
-                state,
-                current,
-                crypto,
-                scope_token,
-                pending_alert=pending_alert,
-            )
-        except mon.MonitorError as error:
-            _abort_monitor(error)
-        _deliver_pending_alert(
-            mon,
-            state=state,
-            records=current,
-            crypto=crypto,
-            scope_token=scope_token,
-            pending_alert=pending_alert,
-            webhook_target=webhook_target,
-            webhook_secret=webhook_secret,
-        )
-    else:
-        try:
-            mon.save_state(state, current, crypto, scope_token)
-        except mon.MonitorError as error:
-            _abort_monitor(error)
-
-    print("[bold red]Exposure change detected.[/]")
-
-    raise typer.Exit(1)
+    _abort_chroma_unavailable()
 
 
 if __name__ == "__main__":

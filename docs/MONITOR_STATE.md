@@ -1,6 +1,6 @@
 # Monitor key, state, and durable outbox contract
 
-This document describes the implemented version-3 local monitor checkpoint and its one-entry authenticated webhook outbox. RAGLeakGuard remains an alpha, best-effort data-at-rest scanner. A completed monitor transition is not proof of detector or connector completeness, production safety, compliance, webhook delivery under every failure, downstream processing, or human notification.
+This document describes the implemented version-3 local monitor checkpoint and its one-entry authenticated webhook outbox. Direct local Chroma new scans are disabled and no source-scanning connector is currently available. A completed pending-alert recovery transition is not proof of detector or connector completeness, production safety, compliance, webhook delivery under every failure, downstream processing, or human notification.
 
 ## Operator workflow
 
@@ -14,25 +14,15 @@ ragleakguard generate-monitor-key --output /etc/ragleakguard/monitor-key.json
 
 On POSIX, the generator creates mode `0600`, and the loader rejects group- or other-accessible files. Portable Python cannot prove a restrictive Windows DACL; use Windows ACL tooling to restrict the key file to the scheduled-task identity and authorized administrators. Missing, non-regular, unreadable, oversized, malformed, weak, wrong-purpose, wrong-construction, and incompatible files produce a static exit-4 failure.
 
-Explicitly initialize a new version-3 baseline:
+New monitor baselines and new scans cannot currently be created. A syntactically valid `--initialize`
+request validates the monitor key and confirms that the selected state path is absent, then exits 6
+without creating state. An existing authenticated state with no pending alert also exits 6 without
+replacement. Existing operator-selected state paths do not need renaming.
 
-```bash
-ragleakguard monitor --source chroma --path ./sample_store --locale au \
-  --key-file /etc/ragleakguard/monitor-key.json \
-  --state /var/lib/ragleakguard/monitor.json --initialize
-```
-
-The recommended filename no longer embeds a state version. Existing operator-selected paths do not need renaming. Initialization atomically creates `pending_alert: null` and never overwrites an existing valid, invalid, legacy, symlink, or otherwise occupied path. An absent state without `--initialize` exits 4 before source access.
-
-Subsequent scheduled runs omit `--initialize` and retain exact source/path spelling:
-
-```bash
-ragleakguard monitor --source chroma --path ./sample_store --locale au \
-  --key-file /etc/ragleakguard/monitor-key.json \
-  --state /var/lib/ragleakguard/monitor.json
-```
-
-A webhook run additionally requires a newly provisioned protocol-v2 secret and matching receiver. Legacy v1 secret files fail closed. See the [webhook protocol](WEBHOOK_PROTOCOL.md) for the mandatory new-file/new-key-ID cutover.
+An existing authenticated pending alert may still be recovered by invoking `monitor` with the exact
+original source/path spelling, monitor key, state, protocol-v2 webhook URL, and protocol-v2 secret.
+This is a recovery operation only, not a scan quickstart. Legacy v1 secret files fail closed. See the
+[webhook protocol](WEBHOOK_PROTOCOL.md) for the mandatory new-file/new-key-ID cutover.
 
 ## Monitor key and finding construction
 
@@ -129,7 +119,7 @@ Clock rollback leaves an alert not due until the recorded UTC second, rather tha
 | Condition | Behavior |
 |---|---|
 | State absent without `--initialize` | Exit 4 before source access. |
-| State absent with `--initialize` | Atomic no-overwrite version-3 creation with `pending_alert: null`. |
+| State absent with `--initialize` | Exit 6 without creating state because a new Chroma baseline would require a disabled scan. |
 | Valid authenticated version 2 | Load as having no pending alert; preserve bytes until the next otherwise-valid state transition writes version 3. |
 | Failure during v2-to-v3 transition | Preserve the authenticated v2 bytes in tested temporary/replace failure paths; no migration success claim. |
 | Version 1 | Static exit 4; preserve bytes because finding-value history cannot be reconstructed. |
@@ -139,14 +129,14 @@ Migration does not reconstruct an alert lost under the old checkpoint-before-sen
 
 Exit behavior is:
 
-- `0`: initialization/no exposure change, or a previously pending alert accepted and durably cleared without a scan;
-- `1`: the current scan found a new/changed exposure and its required local state transition completed;
+- `0`: a previously pending alert was accepted and durably cleared without a scan;
 - `4`: monitor key/state, retry-metadata, or ambiguous clear failure;
 - `5`: webhook configuration, pending backoff, safe-retry precondition, preparation, transport, redirect, or response failure.
+- `6`: authenticated state has no pending alert and a disabled Chroma new scan would otherwise begin, or an explicitly requested new baseline would require such a scan.
 
 ## Residual risks and non-claims
 
-- Detector false negatives, finding instability, connector incompleteness, and concurrent source mutation can still produce missed or noisy changes.
+- No source-scanning connector is available. ChromaDB 1.5.0 and 1.5.9 exhibited durable mutation; other versions have not established an acceptable read-only boundary. Snapshot-backed support is unavailable and under separate review.
 - Exact path spelling binds scope. Key compromise, insecure backup, rollback to an older valid state, overlapping writers, local runtime compromise, Windows DACL configuration, and host filesystem behavior remain external risks.
 - One pending alert and one destination are supported. Receiver outage intentionally blocks all newer scans, potentially forever.
 - A crash during or after network transmission can be ambiguous. A clear failure can cause duplicate delivery.
