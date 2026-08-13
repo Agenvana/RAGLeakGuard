@@ -8,6 +8,8 @@ import socket
 import stat
 import subprocess
 import sys
+import traceback
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -39,6 +41,47 @@ def _tree(tmp_path):
 
 def _assert_no_workspace(work):
     assert not any(path.name.startswith(snap._WORKSPACE_PREFIX) for path in work.iterdir())
+
+
+def _raise_nested_snapshot_error(error_type, canary):
+    try:
+        raise FileNotFoundError(2, "operator-exception-text-canary", str(canary))
+    except OSError as leaf:
+        try:
+            raise error_type() from leaf
+        except error_type as middle:
+            raise error_type() from middle
+
+
+def _assert_chain_excludes(error, *canaries):
+    pending = [error]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        rendered = " ".join(
+            (
+                str(current),
+                repr(current),
+                repr(current.args),
+                repr(getattr(current, "filename", None)),
+                repr(getattr(current, "filename2", None)),
+            )
+        )
+        for canary in canaries:
+            assert str(canary) not in rendered
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+    formatted = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+    for canary in canaries:
+        assert str(canary) not in formatted
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert len(seen) == 1
 
 
 def test_hard_maxima_are_exact_and_defaults_do_not_exceed_them():
@@ -443,6 +486,22 @@ def test_source_replacement_race_is_detected_before_read(monkeypatch, tmp_path):
     _assert_no_workspace(work)
 
 
+def test_windows_path_handle_identity_uses_stable_cross_family_fields(monkeypatch, tmp_path):
+    target = tmp_path / "identity-canary"
+    target.write_bytes(b"stable")
+    with target.open("rb") as handle:
+        observed = snap._identity(os.fstat(handle.fileno()))
+    divergent_ctime = replace(observed, changed_ns=observed.changed_ns + 1)
+    replacement = replace(divergent_ctime, inode=divergent_ctime.inode + 1)
+    mutation = replace(divergent_ctime, modified_ns=divergent_ctime.modified_ns + 1)
+
+    monkeypatch.setattr(snap, "_WINDOWS_PATH_HANDLE_CTIME_DIVERGES", True)
+    assert snap._same_path_handle_identity(divergent_ctime, observed)
+    assert not snap._same_identity(divergent_ctime, observed)
+    assert not snap._same_path_handle_identity(replacement, observed)
+    assert not snap._same_path_handle_identity(mutation, observed)
+
+
 def test_source_mutation_and_torn_work_copy_are_detected(monkeypatch, tmp_path):
     source, work = _tree(tmp_path)
     target = source / "nested" / "record.bin"
@@ -697,6 +756,53 @@ def test_all_failure_surfaces_are_static_and_exclude_paths_exception_and_content
     assert str(caught.value) == STATIC_PREPARATION
     assert SOURCE_CANARY not in rendered
     assert CONTENT_CANARY.decode() not in rendered
+    _assert_chain_excludes(caught.value, hostile, SOURCE_CANARY, CONTENT_CANARY.decode())
+
+
+def test_preparation_boundary_recursively_scrubs_exception_chain(monkeypatch, tmp_path):
+    canary = tmp_path / "operator-preparation-chain-canary"
+
+    def fail(*args, **kwargs):
+        _raise_nested_snapshot_error(snap._SnapshotPreparationError, canary)
+
+    monkeypatch.setattr(snap, "_prepare_snapshot_impl", fail)
+    with pytest.raises(snap._SnapshotPreparationError) as caught:
+        snap._prepare_snapshot(canary, tmp_path)
+    assert str(caught.value) == STATIC_PREPARATION
+    _assert_chain_excludes(caught.value, canary, "operator-exception-text-canary")
+
+
+def test_cleanup_boundary_recursively_scrubs_exception_chain(monkeypatch, tmp_path):
+    source, work = _tree(tmp_path)
+    lease = snap._prepare_snapshot(source, work)
+    canary = tmp_path / "operator-cleanup-chain-canary"
+
+    with monkeypatch.context() as patch:
+        def fail(*args, **kwargs):
+            _raise_nested_snapshot_error(snap._SnapshotCleanupError, canary)
+
+        patch.setattr(snap, "_cleanup_snapshot", fail)
+        with pytest.raises(snap._SnapshotCleanupError) as caught:
+            lease.cleanup()
+    assert str(caught.value) == STATIC_CLEANUP
+    _assert_chain_excludes(caught.value, canary, "operator-exception-text-canary")
+    lease.cleanup()
+    _assert_no_workspace(work)
+
+
+def test_recovery_boundary_recursively_scrubs_exception_chain(monkeypatch, tmp_path):
+    work = tmp_path / "work"
+    work.mkdir()
+    canary = tmp_path / "operator-recovery-chain-canary"
+
+    def fail(*args, **kwargs):
+        _raise_nested_snapshot_error(snap._SnapshotRecoveryError, canary)
+
+    monkeypatch.setattr(snap, "_recover_snapshots_impl", fail)
+    with pytest.raises(snap._SnapshotRecoveryError) as caught:
+        snap._recover_snapshots(work)
+    assert str(caught.value) == STATIC_RECOVERY
+    _assert_chain_excludes(caught.value, canary, "operator-exception-text-canary")
 
 
 def test_no_public_connector_cli_or_package_surface_uses_snapshot_primitives(tmp_path):
@@ -771,6 +877,8 @@ def test_ci_requires_current_native_ext4_apfs_ntfs_matrix_without_chroma_extra()
         "filesystem: ext4",
         "filesystem: APFS",
         "filesystem: NTFS",
+        'python: "3.12"',
+        "Python ${{ matrix.python }} / ${{ matrix.filesystem }}",
         "mkfs.ext4",
         "RLG_REQUIRE_NATIVE_SNAPSHOT_FS: \"1\"",
         '.[detect,dev]',

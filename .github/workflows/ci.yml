@@ -7,7 +7,7 @@ on:
 
 jobs:
   test:
-    name: Python 3.9 / ${{ matrix.filesystem }}
+    name: Python ${{ matrix.python }} / ${{ matrix.filesystem }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -15,17 +15,23 @@ jobs:
         include:
           - os: ubuntu-latest
             filesystem: ext4
+            python: "3.9"
           - os: macos-15
             filesystem: APFS
+            python: "3.9"
           - os: windows-latest
             filesystem: NTFS
+            python: "3.9"
+          - os: windows-latest
+            filesystem: NTFS
+            python: "3.12"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.9
+      - name: Set up Python ${{ matrix.python }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: ${{ matrix.python }}
 
       - name: Install (pinned deps need a fresh pip)
         run: |

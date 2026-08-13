@@ -52,6 +52,7 @@ _CONTROL_FILE_ALLOWANCE = 5
 _CONTROL_BYTE_ALLOWANCE = 16 * 1024
 _MAX_CLEANUP_OBJECTS = _MAX_WORK_FILES + _MAX_SOURCE_DIRECTORIES + 4
 _MAX_CLEANUP_DEPTH = _MAX_RELATIVE_DEPTH + 4
+_WINDOWS_PATH_HANDLE_CTIME_DIVERGES = os.name == "nt"
 
 
 class _SnapshotError(RuntimeError):
@@ -71,6 +72,25 @@ class _SnapshotCleanupError(_SnapshotError):
 class _SnapshotRecoveryError(_SnapshotError):
     def __init__(self) -> None:
         super().__init__("Snapshot confinement recovery failed closed.")
+
+
+def _scrub_exception_chain(error: _SnapshotError) -> _SnapshotError:
+    """Detach every retained exception that could carry operator-controlled data."""
+    pending = [error]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+        current.__cause__ = None
+        current.__context__ = None
+        current.__suppress_context__ = True
+    return error
 
 
 @dataclass(frozen=True)
@@ -119,6 +139,7 @@ class _Identity:
     size: int
     modified_ns: int
     changed_ns: int
+    birth_ns: Optional[int]
     uid: Optional[int]
     gid: Optional[int]
     file_attributes: int
@@ -175,6 +196,11 @@ def _identity(value: os.stat_result) -> _Identity:
         size=int(value.st_size),
         modified_ns=int(value.st_mtime_ns),
         changed_ns=int(value.st_ctime_ns),
+        birth_ns=(
+            int(value.st_birthtime_ns)
+            if getattr(value, "st_birthtime_ns", None) is not None
+            else None
+        ),
         uid=int(value.st_uid) if hasattr(value, "st_uid") else None,
         gid=int(value.st_gid) if hasattr(value, "st_gid") else None,
         file_attributes=int(getattr(value, "st_file_attributes", 0)),
@@ -196,6 +222,28 @@ def _is_sparse(identity: _Identity, raw: os.stat_result) -> bool:
 
 def _same_identity(left: _Identity, right: _Identity) -> bool:
     return left == right
+
+
+def _same_path_handle_identity(path: _Identity, handle: _Identity) -> bool:
+    """Correlate lstat/fstat without mixing Windows' incompatible ctime families.
+
+    Every caller must also compare lstat-to-lstat and fstat-to-fstat with
+    ``_same_identity`` so replacement and mutation checks retain the full signal.
+    """
+    if not _WINDOWS_PATH_HANDLE_CTIME_DIVERGES:
+        return _same_identity(path, handle)
+    return (
+        path.device == handle.device
+        and path.inode == handle.inode
+        and path.mode == handle.mode
+        and path.links == handle.links
+        and path.size == handle.size
+        and path.modified_ns == handle.modified_ns
+        and path.birth_ns == handle.birth_ns
+        and path.uid == handle.uid
+        and path.gid == handle.gid
+        and path.file_attributes == handle.file_attributes
+    )
 
 
 def _same_object(left: _Identity, right: _Identity) -> bool:
@@ -731,12 +779,17 @@ def _read_bounded(path: Path, maximum: int, error_type: type[_SnapshotError]) ->
         flags |= int(getattr(os, "O_NOFOLLOW", 0))
         descriptor = os.open(path, flags)
         opened = _identity(os.fstat(descriptor))
-        if not _same_identity(identity, opened):
+        if not _same_path_handle_identity(identity, opened):
             raise error_type()
         with os.fdopen(descriptor, "rb", closefd=True) as handle:
             descriptor = None
             encoded = handle.read(maximum + 1)
-        if len(encoded) > maximum or not _same_identity(identity, _identity(_lstat(path, error_type))):
+            closed = _identity(os.fstat(handle.fileno()))
+        if (
+            len(encoded) > maximum
+            or not _same_identity(opened, closed)
+            or not _same_identity(identity, _identity(_lstat(path, error_type)))
+        ):
             raise error_type()
         return encoded
     except _SnapshotError:
@@ -867,9 +920,16 @@ def _open_source_file(path: Path, expected: _Identity):
     try:
         descriptor = os.open(path, flags)
         opened = _identity(os.fstat(descriptor))
-        if not _same_identity(opened, expected) or not stat.S_ISREG(opened.mode) or opened.links != 1 or _is_reparse(opened):
+        if (
+            not _same_path_handle_identity(expected, opened)
+            or not stat.S_ISREG(opened.mode)
+            or opened.links != 1
+            or _is_reparse(opened)
+        ):
             raise _SnapshotPreparationError()
-        return os.fdopen(descriptor, "rb", closefd=True)
+        handle = os.fdopen(descriptor, "rb", closefd=True)
+        descriptor = None
+        return handle, opened
     except _SnapshotError:
         if descriptor is not None:
             os.close(descriptor)
@@ -894,7 +954,8 @@ def _copy_file(
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | int(getattr(os, "O_BINARY", 0))
     descriptor = None
     try:
-        with _open_source_file(source, expected) as input_handle:
+        input_handle, opened = _open_source_file(source, expected)
+        with input_handle:
             descriptor = os.open(destination, flags, 0o600)
             with os.fdopen(descriptor, "wb", closefd=True) as output_handle:
                 descriptor = None
@@ -910,8 +971,12 @@ def _copy_file(
                     output_handle.write(chunk)
                 output_handle.flush()
                 os.fsync(output_handle.fileno())
-            if written != expected.size or not _same_identity(_identity(os.fstat(input_handle.fileno())), expected):
+            if written != expected.size or not _same_identity(
+                _identity(os.fstat(input_handle.fileno())), opened
+            ):
                 raise _SnapshotPreparationError()
+        if not _same_identity(_identity(_lstat(source)), expected):
+            raise _SnapshotPreparationError()
         _harden(destination, False)
         verified = _hash_copy(
             destination,
@@ -944,7 +1009,8 @@ def _hash_source(
     digest = hashlib.sha256()
     read = 0
     try:
-        with _open_source_file(path, expected) as handle:
+        handle, opened = _open_source_file(path, expected)
+        with handle:
             while True:
                 _check_control(deadline, clock, cancelled, _SnapshotPreparationError)
                 chunk = handle.read(limits.chunk_bytes)
@@ -954,7 +1020,9 @@ def _hash_source(
                 if read > expected.size:
                     raise _SnapshotPreparationError()
                 digest.update(chunk)
-            if read != expected.size or not _same_identity(_identity(os.fstat(handle.fileno())), expected):
+            if read != expected.size or not _same_identity(
+                _identity(os.fstat(handle.fileno())), opened
+            ):
                 raise _SnapshotPreparationError()
         if not _same_identity(_identity(_lstat(path)), expected):
             raise _SnapshotPreparationError()
@@ -986,7 +1054,8 @@ def _hash_copy(
             or identity.size != expected_size
         ):
             raise _SnapshotPreparationError()
-        with _open_source_file(path, identity) as handle:
+        handle, opened = _open_source_file(path, identity)
+        with handle:
             while True:
                 _check_control(deadline, clock, cancelled, _SnapshotPreparationError)
                 chunk = handle.read(limits.chunk_bytes)
@@ -996,6 +1065,8 @@ def _hash_copy(
                 if read > expected_size:
                     raise _SnapshotPreparationError()
                 digest.update(chunk)
+            if not _same_identity(_identity(os.fstat(handle.fileno())), opened):
+                raise _SnapshotPreparationError()
         if read != expected_size or not _same_identity(identity, _identity(_lstat(path))):
             raise _SnapshotPreparationError()
         return digest.digest()
@@ -1143,8 +1214,9 @@ class _PreparedSnapshot:
     ) -> None:
         if self._closed:
             return
-        deadline = _deadline(self._limits.cleanup_seconds, clock, _SnapshotCleanupError)
+        failure = None
         try:
+            deadline = _deadline(self._limits.cleanup_seconds, clock, _SnapshotCleanupError)
             _cleanup_snapshot(
                 self._base,
                 self._workspace,
@@ -1161,8 +1233,14 @@ class _PreparedSnapshot:
                 expected_workspace=self._workspace_identity,
                 expected_snapshot=self._snapshot_identity,
             )
-        except _SnapshotError:
-            raise _SnapshotCleanupError() from None
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except _SnapshotCleanupError as error:
+            failure = error
+        except BaseException:
+            failure = _SnapshotCleanupError()
+        if failure is not None:
+            raise _scrub_exception_chain(failure)
         self._closed = True
 
     def __enter__(self) -> "_PreparedSnapshot":
@@ -1175,7 +1253,7 @@ class _PreparedSnapshot:
         return False
 
 
-def _prepare_snapshot(
+def _prepare_snapshot_impl(
     source_path: object,
     work_parent: object,
     *,
@@ -1392,6 +1470,34 @@ def _prepare_snapshot(
         if isinstance(original_error, (KeyboardInterrupt, SystemExit)):
             raise
         raise _SnapshotPreparationError() from None
+
+
+def _prepare_snapshot(
+    source_path: object,
+    work_parent: object,
+    *,
+    limits: _Limits = _DEFAULT_LIMITS,
+    clock: Callable[[], float] = time.monotonic,
+    cancelled: Optional[Callable[[], bool]] = None,
+    token_source: Callable[[int], bytes] = secrets.token_bytes,
+) -> _PreparedSnapshot:
+    """Run preparation behind a static, chain-free exception boundary."""
+    try:
+        return _prepare_snapshot_impl(
+            source_path,
+            work_parent,
+            limits=limits,
+            clock=clock,
+            cancelled=cancelled,
+            token_source=token_source,
+        )
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except _SnapshotError as error:
+        failure = error
+    except BaseException:
+        failure = _SnapshotPreparationError()
+    raise _scrub_exception_chain(failure)
 
 
 def _parse_document(encoded: bytes, error_type: type[_SnapshotError]) -> dict:
@@ -1624,7 +1730,10 @@ def _cleanup_snapshot(
     if (
         (expected_workspace is not None and not _same_object(observed_workspace, expected_workspace))
         or (expected_snapshot is not None and not _same_object(observed_snapshot, expected_snapshot))
-        or not _same_object(lock.identity, _identity(_lstat(snapshot / _LEASE_FILE, _SnapshotCleanupError)))
+        or not _same_path_handle_identity(
+            _identity(_lstat(snapshot / _LEASE_FILE, _SnapshotCleanupError)),
+            lock.identity,
+        )
     ):
         raise _SnapshotCleanupError()
     loaded_workspace_id, _, loaded_key = _load_workspace(workspace, _SnapshotCleanupError)
@@ -1713,7 +1822,7 @@ def _cleanup_snapshot(
         raise _SnapshotCleanupError() from None
 
 
-def _recover_snapshots(
+def _recover_snapshots_impl(
     work_parent: object,
     *,
     limits: _Limits = _DEFAULT_LIMITS,
@@ -1795,6 +1904,30 @@ def _recover_snapshots(
         raise _SnapshotRecoveryError() from None
     except (OSError, ValueError, TypeError):
         raise _SnapshotRecoveryError() from None
+
+
+def _recover_snapshots(
+    work_parent: object,
+    *,
+    limits: _Limits = _DEFAULT_LIMITS,
+    clock: Callable[[], float] = time.monotonic,
+    cancelled: Optional[Callable[[], bool]] = None,
+) -> int:
+    """Run recovery behind a static, chain-free exception boundary."""
+    try:
+        return _recover_snapshots_impl(
+            work_parent,
+            limits=limits,
+            clock=clock,
+            cancelled=cancelled,
+        )
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except _SnapshotError as error:
+        failure = error
+    except BaseException:
+        failure = _SnapshotRecoveryError()
+    raise _scrub_exception_chain(failure)
 
 
 __all__ = ()
