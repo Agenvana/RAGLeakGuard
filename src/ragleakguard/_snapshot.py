@@ -811,6 +811,38 @@ class _LeaseLock:
             self._closed = True
 
 
+def _read_locked_lease(
+    lock: _LeaseLock,
+    maximum: int,
+    error_type: type[_SnapshotError],
+) -> bytes:
+    """Read the lease through its locking descriptor for Windows lock compatibility."""
+    try:
+        identity = lock.identity
+        if (
+            not stat.S_ISREG(identity.mode)
+            or _is_reparse(identity)
+            or identity.links != 1
+            or identity.size < 1
+            or identity.size > maximum
+        ):
+            raise error_type()
+        descriptor = lock.descriptor
+        original_offset = os.lseek(descriptor, 0, os.SEEK_CUR)
+        try:
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            encoded = os.read(descriptor, maximum + 1)
+        finally:
+            os.lseek(descriptor, original_offset, os.SEEK_SET)
+        if len(encoded) > maximum or not _same_identity(identity, lock.identity):
+            raise error_type()
+        return encoded
+    except _SnapshotError:
+        raise error_type() from None
+    except (OSError, ValueError, TypeError):
+        raise error_type() from None
+
+
 def _create_locked_lease(path: Path, encoded: bytes) -> _LeaseLock:
     lock = _LeaseLock(path, create=True)
     try:
@@ -1441,6 +1473,7 @@ def _load_snapshot_marker(
     workspace_id: str,
     key: bytes,
     error_type: type[_SnapshotError],
+    lease_lock: Optional[_LeaseLock] = None,
 ) -> tuple[str, str, str]:
     try:
         snapshot_id = snapshot.name.removeprefix(_SNAPSHOT_PREFIX)
@@ -1463,7 +1496,12 @@ def _load_snapshot_marker(
             or not hmac.compare_digest(authentication, _authentication(key, document))
         ):
             raise error_type()
-        lease = _parse_document(_read_bounded(snapshot / _LEASE_FILE, 4096, error_type), error_type)
+        lease_encoded = (
+            _read_locked_lease(lease_lock, 4096, error_type)
+            if lease_lock is not None
+            else _read_bounded(snapshot / _LEASE_FILE, 4096, error_type)
+        )
+        lease = _parse_document(lease_encoded, error_type)
         if set(lease) != {
             "authentication", "construction", "lease_id", "snapshot_id", "version", "workspace_id"
         }:
@@ -1594,7 +1632,7 @@ def _cleanup_snapshot(
         raise _SnapshotCleanupError()
     try:
         loaded_snapshot_id, loaded_lease_id, _ = _load_snapshot_marker(
-            snapshot, workspace_id, key, _SnapshotCleanupError
+            snapshot, workspace_id, key, _SnapshotCleanupError, lock
         )
         if loaded_snapshot_id != snapshot_id or loaded_lease_id != lease_id:
             raise _SnapshotCleanupError()
@@ -1724,11 +1762,11 @@ def _recover_snapshots(
                 raise _SnapshotRecoveryError()
             for snapshot in snapshots:
                 snapshot_identity = _identity(_lstat(snapshot, _SnapshotRecoveryError))
-                snapshot_id, lease_id, _ = _load_snapshot_marker(
-                    snapshot, workspace_id, key, _SnapshotRecoveryError
-                )
                 lock = _LeaseLock(snapshot / _LEASE_FILE, create=False)
                 try:
+                    snapshot_id, lease_id, _ = _load_snapshot_marker(
+                        snapshot, workspace_id, key, _SnapshotRecoveryError, lock
+                    )
                     _cleanup_snapshot(
                         base,
                         workspace,

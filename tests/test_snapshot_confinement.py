@@ -127,9 +127,11 @@ def test_control_documents_are_authenticated_and_contain_no_source_canaries(tmp_
         workspace / snap._WORKSPACE_KEY,
         workspace / snap._WORKSPACE_MARKER,
         snapshot / snap._SNAPSHOT_MARKER,
-        snapshot / snap._LEASE_FILE,
     )
-    serialized = b"".join(path.read_bytes() for path in controls)
+    lease_encoded = snap._read_locked_lease(
+        lease._lock, 4096, snap._SnapshotCleanupError
+    )
+    serialized = b"".join(path.read_bytes() for path in controls) + lease_encoded
     assert SOURCE_CANARY.encode() not in serialized
     assert CONTENT_CANARY not in serialized
     assert b"record.bin" not in serialized
@@ -138,6 +140,9 @@ def test_control_documents_are_authenticated_and_contain_no_source_canaries(tmp_
         assert json.loads(path.read_text(encoding="ascii"))
         if os.name != "nt":
             assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert json.loads(lease_encoded.decode("ascii"))
+    if os.name != "nt":
+        assert stat.S_IMODE((snapshot / snap._LEASE_FILE).stat().st_mode) == 0o600
     lease.cleanup()
 
 
@@ -575,14 +580,13 @@ def test_authenticated_control_schema_rejects_boolean_versions(tmp_path, control
         "lease": lease._snapshot / snap._LEASE_FILE,
     }
     path = paths[control]
+    lease._lock.close()
+    lease._closed = True
     document = json.loads(path.read_text(encoding="ascii"))
     document.pop("authentication")
     document["version"] = True
     encoded = snap._authenticated_document(lease._key, document)
     path.write_bytes(encoded)
-    lease._lock.close()
-    lease._closed = True
-
     with pytest.raises(snap._SnapshotRecoveryError):
         snap._recover_snapshots(work)
     assert lease._workspace.exists()
@@ -655,6 +659,8 @@ foreach ($rule in $acl.Access) {
   if ($rule.AccessControlType -ne 'Allow' -or $allowed -notcontains $sid) { exit 11 }
 }
 """
+    script_path = tmp_path / "inspect-dacl.ps1"
+    script_path.write_text(script, encoding="utf-8")
     for path in (
         lease._workspace,
         lease._snapshot,
@@ -667,8 +673,8 @@ foreach ($rule in $acl.Access) {
                 "-NoLogo",
                 "-NoProfile",
                 "-NonInteractive",
-                "-Command",
-                script,
+                "-File",
+                str(script_path),
                 str(path),
             ],
             capture_output=True,
@@ -784,8 +790,16 @@ def _native_filesystem(path):
         )
         return result.stdout.strip()
     if sys.platform == "darwin":
+        mounted = subprocess.run(
+            ["/bin/df", "-P", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+        device = mounted.stdout.strip().splitlines()[-1].split()[0]
         result = subprocess.run(
-            ["/usr/sbin/diskutil", "info", "-plist", str(path)],
+            ["/usr/sbin/diskutil", "info", "-plist", device],
             capture_output=True,
             timeout=20,
             check=True,
