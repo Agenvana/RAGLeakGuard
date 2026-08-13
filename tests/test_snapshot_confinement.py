@@ -669,7 +669,7 @@ foreach ($rule in $acl.Access) {
     ):
         result = subprocess.run(
             [
-                "powershell.exe",
+                "pwsh",
                 "-NoLogo",
                 "-NoProfile",
                 "-NonInteractive",
