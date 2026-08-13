@@ -1,6 +1,6 @@
 # Architecture
 
-**Baseline:** WP7A implemented runtime behavior was independently inspected at Git commit `59cc737732d18d29cb87c93df7117f1324586ec2` on 2026-08-12. This is an alpha architecture description, not a stability, production-readiness, connector-completeness, or compliance guarantee.
+**Baseline:** WP7A implemented runtime behavior was independently inspected at Git commit `59cc737732d18d29cb87c93df7117f1324586ec2` on 2026-08-12. WP7B starts from merged `main` at `18ac6ff6da4926d38cbe081a42594b59932adc7b`; its private filesystem lifecycle requires independent review of the exact implementation commit before merge. This is an alpha architecture description, not a stability, production-readiness, connector-completeness, or compliance guarantee.
 
 ## Implemented now
 
@@ -52,6 +52,45 @@ versions have not established an acceptable read-only boundary.
 was not completed. Snapshot-backed support is under a separate feasibility and security review and
 is unavailable. No supported Chroma range or future activation is implied.
 
+### Private snapshot-confinement foundation
+
+[_snapshot.py](../src/ragleakguard/_snapshot.py) implements the private WP7B filesystem lifecycle.
+It accepts a directory that the operator represents as a complete, already-created, quiescent
+filesystem snapshot; rejects a symlinked root or work parent; inventories only same-device regular
+files and directories without following links or reparse points; copies into a new restrictive
+RAGLeakGuard-owned workspace; and re-inventories and re-hashes the source and copy before returning a
+private held lease. It does not import or construct Chroma.
+
+The lifecycle rejects hard-linked or sparse files, unsupported objects, Windows alternate data
+streams, traversal or source/work overlap, observed mutation, insufficient free space, expired
+deadlines, cancellation, unsafe permissions, ownership/lease uncertainty, and these hard maxima:
+
+| Bound | Maximum |
+|---|---:|
+| Source files | 20,000 |
+| Source directories, including the root | 10,000 |
+| Relative depth | 16 |
+| One source file | 16 GiB |
+| Aggregate source bytes | 64 GiB |
+| Work-copy files, including control files | 21,000 |
+| Work-copy bytes, including control files | 72 GiB |
+| Copy chunk | 1 MiB |
+| Preparation deadline | 1,800 seconds |
+| Cleanup/recovery deadline | 600 seconds |
+
+The workspace contains restrictive local key, authenticated owner, authenticated snapshot-phase,
+and authenticated lease control files. Cleanup validates resolved containment, the expected
+filesystem objects, authenticated ownership, and the held lease before removing anything. Recovery
+examines only correctly prefixed direct children of the selected work parent and removes a workspace
+only when its ownership documents authenticate and its exclusive lease can be acquired. Static
+errors and redacted representations omit source/work paths, file names, contents, and underlying
+exception text.
+
+These primitives have no public export, CLI option, connector hook, package extra, report path,
+monitor transition, or webhook behavior. `read_chroma()`, `scan`, and new-scan `monitor` remain at
+the WP7A disabled boundary. A separate issue, evidence set, exact-commit independent review, and
+human authorization are required before any consumer or source-scanning surface may use WP7B.
+
 ### Detection and risk reports
 
 [detect.py](../src/ragleakguard/detect.py) contains the Presidio/spaCy detector. Default library use
@@ -101,9 +140,13 @@ paths because no scan or detector initialization begins.
   remain separate trust boundaries.
 - Package indexes, dependencies, model downloads, source control, and release systems are supply-chain
   boundaries.
+- The operator who creates a source snapshot, the local account and administrators that can alter
+  it, filesystem semantics, free-space accounting, and process/power-loss behavior are boundaries
+  for the private WP7B lifecycle.
 
 ## Planned or unavailable
 
-Snapshot-backed Chroma access is only under separate feasibility and security review. Additional
-connectors, Prevent/Fix, Prove, Control Plane, certification, and hosted services are not implemented.
+Snapshot-backed Chroma access remains unavailable and under separate feasibility and security
+review; the private WP7B lifecycle is not a connector. Additional connectors, Prevent/Fix, Prove,
+Control Plane, certification, and hosted services are not implemented.
 PyPI 0.1.0 contains the unsafe direct path and must not be used for Chroma scanning.
