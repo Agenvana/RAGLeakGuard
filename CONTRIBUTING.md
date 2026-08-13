@@ -64,7 +64,20 @@ A locale contribution must:
 
 **Implemented now:** no source-scanning connector is available. Direct local Chroma entry points fail closed before Chroma import or source access. [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred as `not planned`, not completed. Executable endpoint evidence established durable mutation with ChromaDB 1.5.0 and 1.5.9; other versions have not established an acceptable read-only boundary.
 
-Snapshot-backed support is under separate feasibility and security review and is unavailable. Do not add snapshot code, activate a connector, claim a supported Chroma range, or commit to future support without separate issue scope and evidence. PyPI 0.1.0 contains the unsafe direct Chroma path and must not be used for Chroma scanning.
+Snapshot-backed Chroma scanning remains unavailable. WP7B contains only a private, bounded
+filesystem-confinement foundation for a complete snapshot that the operator created separately. It
+does not import or construct Chroma, prove quiescence or atomic multi-file consistency, or expose a
+public function, CLI, connector, package extra, report, monitor, or webhook path. Do not activate or
+extend that private lifecycle into a scanning surface, claim a supported Chroma range, or commit to
+future support without a separate issue, executable evidence, exact-commit independent review, and
+human authorization. PyPI 0.1.0 contains the unsafe direct Chroma path and must not be used for
+Chroma scanning.
+
+Changes to the private snapshot lifecycle must preserve its hard maxima, no-follow regular-object
+allowlist, same-device containment, observed-stability checks, restrictive work permissions,
+authenticated ownership/lease controls, static privacy-safe failures, and proven-owned cleanup
+boundary. Tests must use deterministic synthetic bytes and cover native filesystem behavior rather
+than inferring it from the operating-system name.
 
 Any future connector change requires an independently reviewed read-only boundary and must test application and dependency effects, bounds, completeness, malformed input, cancellation, concurrent mutation, filesystem mutation, and outbound network behavior. An incomplete or inconsistent scan must never report success.
 

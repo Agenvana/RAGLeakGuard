@@ -7,23 +7,66 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: Python ${{ matrix.python }} / ${{ matrix.filesystem }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            filesystem: ext4
+            python: "3.9"
+          - os: macos-15
+            filesystem: APFS
+            python: "3.9"
+          - os: windows-latest
+            filesystem: NTFS
+            python: "3.9"
+          - os: windows-latest
+            filesystem: NTFS
+            python: "3.12"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.9
+      - name: Set up Python ${{ matrix.python }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: ${{ matrix.python }}
 
       - name: Install (pinned deps need a fresh pip)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[chroma,detect,dev]"
+          python -m pip install -e ".[detect,dev]"
           python -m spacy download en_core_web_sm
 
-      - name: Run tests
+      - name: Prepare native ext4 test volume
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          truncate -s 1G "${RUNNER_TEMP}/rlg-wp7b-ext4.img"
+          mkfs.ext4 -q -F "${RUNNER_TEMP}/rlg-wp7b-ext4.img"
+          sudo mkdir -p /mnt/rlg-wp7b-ext4
+          sudo mount -o loop "${RUNNER_TEMP}/rlg-wp7b-ext4.img" /mnt/rlg-wp7b-ext4
+          sudo chown "$(id -u):$(id -g)" /mnt/rlg-wp7b-ext4
+
+      - name: Run tests on native ext4
+        if: runner.os == 'Linux'
         env:
           PYTHONWARNINGS: ignore
           ANONYMIZED_TELEMETRY: "False"
-        run: python -m pytest -q
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          TMPDIR: /mnt/rlg-wp7b-ext4
+        run: python -m pytest -q --basetemp /mnt/rlg-wp7b-ext4/pytest
+
+      - name: Run tests on native APFS or NTFS
+        if: runner.os != 'Linux'
+        env:
+          PYTHONWARNINGS: ignore
+          ANONYMIZED_TELEMETRY: "False"
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+        run: python -m pytest -q --basetemp "${{ runner.temp }}/rlg-wp7b-pytest"
+
+      - name: Unmount native ext4 test volume
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: sudo umount /mnt/rlg-wp7b-ext4
