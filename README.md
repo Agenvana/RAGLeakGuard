@@ -20,9 +20,18 @@ Other Chroma versions have not established an acceptable read-only boundary. Thi
 tested scope; it is not a claim about every Chroma version.
 
 [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred as `not planned`;
-it was not completed. Snapshot-backed support is under separate feasibility and security review,
-is not implemented, and may never become available. No supported Chroma version range, future
-availability, connector completeness, read-only source access, or production-safety claim is made.
+it was not completed. WP7B's private, bounded operator-snapshot confinement foundation passed
+independent review at exact implementation head
+`128decb3e0d78825e884f6dce019898b568c6ba2` and was merged through
+[PR #20](https://github.com/Agenvana/RAGLeakGuard/pull/20) as merge commit
+`5db765689d35eec8ba918f0f616d5fea34e56955`. That foundation only confines a complete filesystem
+snapshot created separately by the operator; it does not import or construct Chroma and exposes no
+public function, CLI, connector, report, monitor, or webhook path.
+
+Snapshot-backed public scanning remains unavailable and requires separate feasibility, security,
+activation, and exact-commit review. Direct Chroma access remains disabled. No supported Chroma
+version range, future availability, connector completeness, read-only source access, or
+production-safety claim is made.
 
 The PyPI `0.1.0` package contains the unsafe direct Chroma path and **must not be used for Chroma
 scanning**. Yanking that package and publishing a corrective release require separate human
@@ -109,8 +118,9 @@ or safety. See [benchmark reproducibility](docs/BENCHMARK_REPRODUCIBILITY.md).
 
 ## Roadmap and non-claims
 
-See [ROADMAP.md](ROADMAP.md). Planned connectors, snapshot feasibility work, Prevent/Fix, Prove,
-Control Plane, erasure, compliance, certification, and assurance surfaces are not implemented.
+See [ROADMAP.md](ROADMAP.md). Snapshot-backed public scanning, planned connectors, Prevent/Fix,
+Prove, Control Plane, erasure, compliance, certification, and assurance surfaces are not
+implemented. The completed private WP7B confinement foundation is not a connector.
 
 ## License
 

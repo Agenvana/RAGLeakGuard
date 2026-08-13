@@ -1,6 +1,11 @@
 # Architecture
 
-**Baseline:** WP7A implemented runtime behavior was independently inspected at Git commit `59cc737732d18d29cb87c93df7117f1324586ec2` on 2026-08-12. WP7B starts from merged `main` at `18ac6ff6da4926d38cbe081a42594b59932adc7b`; its private filesystem lifecycle requires independent review of the exact implementation commit before merge. This is an alpha architecture description, not a stability, production-readiness, connector-completeness, or compliance guarantee.
+**Baseline:** WP7B's private bounded operator-snapshot confinement foundation passed independent
+review at exact implementation head `128decb3e0d78825e884f6dce019898b568c6ba2` and was merged
+through [PR #20](https://github.com/Agenvana/RAGLeakGuard/pull/20) as merge commit
+`5db765689d35eec8ba918f0f616d5fea34e56955` on 2026-08-13. This post-review documentation
+baseline starts from that merge. This is an alpha architecture description, not a stability,
+production-readiness, connector-completeness, or compliance guarantee.
 
 ## Implemented now
 
@@ -49,8 +54,9 @@ validation failure, and successful reads could change hashes of opaque durable s
 versions have not established an acceptable read-only boundary.
 
 [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred as `not planned`; it
-was not completed. Snapshot-backed support is under a separate feasibility and security review and
-is unavailable. No supported Chroma range or future activation is implied.
+was not completed. Snapshot-backed public scanning is unavailable and not implemented. Its
+feasibility, security, and any activation require work separate from the completed private WP7B
+foundation. No supported Chroma range or future activation is implied.
 
 ### Private snapshot-confinement foundation
 
@@ -146,7 +152,8 @@ paths because no scan or detector initialization begins.
 
 ## Planned or unavailable
 
-Snapshot-backed Chroma access remains unavailable and under separate feasibility and security
-review; the private WP7B lifecycle is not a connector. Additional connectors, Prevent/Fix, Prove,
-Control Plane, certification, and hosted services are not implemented.
+Snapshot-backed public Chroma scanning remains unavailable and requires separate feasibility,
+security, activation, and exact-commit review; the private WP7B lifecycle is not a connector.
+Direct Chroma access remains disabled. Additional connectors, Prevent/Fix, Prove, Control Plane,
+certification, and hosted services are not implemented.
 PyPI 0.1.0 contains the unsafe direct path and must not be used for Chroma scanning.

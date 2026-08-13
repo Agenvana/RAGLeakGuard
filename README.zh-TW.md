@@ -18,9 +18,16 @@ client 或讀取時，可能修改持久化 store 檔案。其他 Chroma 版本�
 這是確切的測試範圍，不代表所有 Chroma 版本都已測試。
 
 [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) 已以 `not planned` 延後，
-並未完成。以 snapshot 為基礎的支援正接受另一項可行性與安全審查；目前未實作，也不保證
-未來會提供。本專案不宣稱 Chroma 支援版本範圍、未來可用性、連接器完整性、來源唯讀或
-正式環境安全性。
+並未完成。WP7B 的私有、有界限 operator-snapshot confinement 基礎已在確切 implementation
+head `128decb3e0d78825e884f6dce019898b568c6ba2` 通過獨立審查，並透過
+[PR #20](https://github.com/Agenvana/RAGLeakGuard/pull/20) 以 merge commit
+`5db765689d35eec8ba918f0f616d5fea34e56955` 合併。這項基礎只限制由 operator 另行建立的完整
+filesystem snapshot；它不會 import 或建立 Chroma，也沒有公開 function、CLI、connector、
+report、monitor 或 webhook 路徑。
+
+以 snapshot 為基礎的公開掃描目前未實作且不可用，仍需另行進行可行性、安全、啟用與確切
+commit 審查。直接存取 Chroma 仍維持停用。本專案不宣稱 Chroma 支援版本範圍、未來可用性、
+連接器完整性、來源唯讀或正式環境安全性。
 
 PyPI `0.1.0` 套件包含不安全的直接 Chroma 路徑，**不得用於 Chroma 掃描**。撤下該套件
 與發布修正版都需要人類維護者另行授權；此儲存庫變更沒有執行這些動作。
@@ -100,8 +107,9 @@ preparation、transport 或 response 失敗以 exit 5 結束。Slack 與 Discord
 
 ## 路線圖與非保證事項
 
-詳見 [ROADMAP.md](ROADMAP.md)。規劃中的連接器、snapshot 可行性工作、Prevent/Fix、Prove、
-Control Plane、刪除證明、合規、認證及 assurance 介面都尚未實作。
+詳見 [ROADMAP.md](ROADMAP.md)。以 snapshot 為基礎的公開掃描、規劃中的連接器、Prevent/Fix、
+Prove、Control Plane、刪除證明、合規、認證及 assurance 介面都尚未實作。已完成的私有
+WP7B confinement 基礎並不是 connector。
 
 ## 授權條款
 

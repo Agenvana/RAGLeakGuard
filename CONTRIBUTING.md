@@ -10,7 +10,9 @@ Use an issue-scoped branch and keep a pull request to one objective. Roadmap ent
 
 ## Development setup
 
-The package metadata requires Python 3.9 or newer. The current CI job validates Python 3.9 on Ubuntu; other Python/platform combinations are not yet a documented supported matrix.
+The package metadata requires Python 3.9 or newer. CI validates the WP7B filesystem evidence on
+ext4/Python 3.9, APFS/Python 3.9, NTFS/Python 3.9, and NTFS/Python 3.12. Those jobs are executable
+evidence for their named environments, not a documented supported release matrix.
 
 ```bash
 python -m venv .venv
@@ -72,6 +74,12 @@ extend that private lifecycle into a scanning surface, claim a supported Chroma 
 future support without a separate issue, executable evidence, exact-commit independent review, and
 human authorization. PyPI 0.1.0 contains the unsafe direct Chroma path and must not be used for
 Chroma scanning.
+
+The private foundation passed independent review at exact implementation head
+`128decb3e0d78825e884f6dce019898b568c6ba2` and was merged through
+[PR #20](https://github.com/Agenvana/RAGLeakGuard/pull/20) as merge commit
+`5db765689d35eec8ba918f0f616d5fea34e56955`. That review record does not authorize a public
+snapshot consumer, direct Chroma access, a release, or WP7C/WP7D.
 
 Changes to the private snapshot lifecycle must preserve its hard maxima, no-follow regular-object
 allowlist, same-device containment, observed-stability checks, restrictive work permissions,
