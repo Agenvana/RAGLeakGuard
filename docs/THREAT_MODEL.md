@@ -1,6 +1,11 @@
 # Threat model
 
-**Baseline:** WP7A implemented runtime behavior was independently inspected at `59cc737732d18d29cb87c93df7117f1324586ec2` on 2026-08-12. WP7B starts from merged `main` at `18ac6ff6da4926d38cbe081a42594b59932adc7b` and requires independent filesystem/security review of the exact implementation commit. RAGLeakGuard is an alpha security project. No source-scanning connector is currently available.
+**Baseline:** WP7B's private bounded operator-snapshot confinement foundation passed independent
+review at exact implementation head `128decb3e0d78825e884f6dce019898b568c6ba2` and was merged
+through [PR #20](https://github.com/Agenvana/RAGLeakGuard/pull/20) as merge commit
+`5db765689d35eec8ba918f0f616d5fea34e56955` on 2026-08-13. This post-review documentation
+baseline starts from that merge. RAGLeakGuard is an alpha security project.
+No source-scanning connector is currently available.
 
 ## Scope
 
@@ -27,7 +32,8 @@ Executable endpoint tests established durable store mutation for ChromaDB 1.5.0 
 client construction or reads. Other Chroma versions have not established an acceptable read-only boundary.
 Therefore, direct local Chroma entry points fail closed without importing Chroma or
 accessing the source. [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred,
-not completed. Snapshot-backed support remains under separate review and is unavailable.
+not completed. Snapshot-backed public scanning remains unavailable and not implemented; its review
+and activation are separate from the completed private WP7B confinement foundation.
 
 PyPI 0.1.0 contains the unsafe direct path and must not be used for Chroma scanning.
 
@@ -60,7 +66,7 @@ PyPI 0.1.0 contains the unsafe direct path and must not be used for Chroma scann
 
 | Threat | Current control | Residual risk / limitation |
 |---|---|---|
-| Chroma mutates a production source during inspection | Every direct new-scan entry point is disabled before import, client construction, filesystem access, embeddings, or socket activity. | Snapshot feasibility is unresolved and no connector is available. |
+| Chroma mutates a production source during inspection | Every direct new-scan entry point is disabled before import, client construction, filesystem access, embeddings, or socket activity. | Snapshot-backed public scanning feasibility is unresolved and no connector is available. |
 | Traversal, link, reparse, mount, ADS, sparse-file, or replacement tricks escape confinement | WP7B rejects symlinked roots/parents, path overlap, cross-device entries, non-regular objects, hard links, sparse files, reparse points, and Windows named streams; it uses no-follow opens plus pre/post object identity checks. | A same-account administrator, kernel/filesystem compromise, or unexercised filesystem semantic can defeat process-level checks. |
 | Mutable source yields a torn or incomplete work copy | Three source inventories, two work-copy inventories, source/copy content hashes, file/directory identities, count/size/depth ceilings, deadline checks, cancellation, and static failure prevent an observed inconsistency from returning a lease. | These checks narrow observable races; they do not create or prove transactionally atomic multi-file snapshot isolation, and a mutation can always occur after the final observation. |
 | Attacker causes unbounded allocation or work | Hard maxima are 20,000 source files, 10,000 source directories, depth 16, 16 GiB per file, 64 GiB source bytes, 21,000 work files, 72 GiB work bytes, 1 MiB chunks, 1,800 seconds preparation, and 600 seconds cleanup/recovery; public values may only narrow them. | Free-space checks are time-of-check/time-of-use observations. A blocking kernel/filesystem call cannot be preempted by the cooperative monotonic deadline. |

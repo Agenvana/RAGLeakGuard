@@ -20,7 +20,8 @@ Early development (the **Diagnose** stage). Checkboxes are intent, not commitmen
 ## Connectors
 No source-scanning connector is currently available.
 
-- [ ] **Snapshot-backed Chroma feasibility and security review** — direct local Chroma access is disabled after executable endpoint evidence established durable mutation for ChromaDB 1.5.0 and 1.5.9. Other versions have not established an acceptable read-only boundary. [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred, not completed. Snapshot support is unavailable and is not a commitment.
+- [x] **WP7B private bounded operator-snapshot confinement foundation** — the private filesystem lifecycle passed independent review at exact implementation head `128decb3e0d78825e884f6dce019898b568c6ba2` and was merged through [PR #20](https://github.com/Agenvana/RAGLeakGuard/pull/20) as merge commit `5db765689d35eec8ba918f0f616d5fea34e56955`. It confines a complete snapshot created separately by the operator. It does not import or construct Chroma, expose a public scanning surface, or prove source quiescence, provenance, completeness, or atomic multi-file consistency.
+- [ ] **Snapshot-backed public Chroma scanning** — unavailable and not implemented. Any activation requires a separate issue, feasibility and security evidence, exact-commit independent review, and human authorization; future availability is not a commitment. Direct local Chroma access remains disabled after executable endpoint evidence established durable mutation for ChromaDB 1.5.0 and 1.5.9. Other versions have not established an acceptable read-only boundary. [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred, not completed.
 - [ ] Pinecone
 - [ ] pgvector (Postgres)
 - [ ] Qdrant, Weaviate

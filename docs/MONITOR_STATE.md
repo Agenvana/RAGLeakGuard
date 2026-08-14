@@ -136,7 +136,10 @@ Exit behavior is:
 
 ## Residual risks and non-claims
 
-- No source-scanning connector is available. ChromaDB 1.5.0 and 1.5.9 exhibited durable mutation; other versions have not established an acceptable read-only boundary. Snapshot-backed support is unavailable and under separate review.
+- No source-scanning connector is available. ChromaDB 1.5.0 and 1.5.9 exhibited durable mutation;
+  other versions have not established an acceptable read-only boundary. WP7B's completed private
+  operator-snapshot confinement foundation is not used by monitor. Snapshot-backed public scanning
+  remains unavailable and not implemented, and direct Chroma access remains disabled.
 - Exact path spelling binds scope. Key compromise, insecure backup, rollback to an older valid state, overlapping writers, local runtime compromise, Windows DACL configuration, and host filesystem behavior remain external risks.
 - One pending alert and one destination are supported. Receiver outage intentionally blocks all newer scans, potentially forever.
 - A crash during or after network transmission can be ambiguous. A clear failure can cause duplicate delivery.
