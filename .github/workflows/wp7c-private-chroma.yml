@@ -92,7 +92,7 @@ jobs:
           sudo mkdir /mnt/rlg-wp7c-ext4/repository
           git archive --format=tar HEAD | sudo tar -xf - -C /mnt/rlg-wp7c-ext4/repository
           sudo chown -R "${test_user}:${test_user}" /mnt/rlg-wp7c-ext4
-          sudo -u "${test_user}" test -r /mnt/rlg-wp7c-ext4/repository/pytest.toml
+          sudo -u "${test_user}" test -r /mnt/rlg-wp7c-ext4/repository/pyproject.toml
           test "$(findmnt -n -o FSTYPE /mnt/rlg-wp7c-ext4)" = ext4
 
       - name: Assert native APFS
