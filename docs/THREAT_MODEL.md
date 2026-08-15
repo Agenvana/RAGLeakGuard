@@ -14,6 +14,8 @@ In scope:
 - synchronous library disablement of direct local Chroma access;
 - private bounded copying, ownership, leasing, cleanup, and recovery for an operator-created
   filesystem snapshot;
+- private exact-candidate Chroma migration validation, bounded two-pass enumeration, worker
+  isolation/teardown, effect classification, and counter receipt inside a held work copy;
 - `scan` and `monitor` CLI validation and precedence;
 - preservation of reports, authenticated monitor state, and the WP6 pending-alert outbox;
 - detection, risk-policy, report, console, package, documentation, and release claim boundaries;
@@ -21,9 +23,10 @@ In scope:
 
 Out of scope because it is unavailable or not implemented:
 
-- direct or snapshot-backed Chroma source scanning or any public use of the private WP7B lifecycle;
+- direct Chroma scanning, snapshot-backed public scanning, detector consumption, or any public use
+  of the private WP7B/WP7C lifecycle;
 - every other source connector;
-- connector pagination, metadata expansion, consistency receipts, and version support;
+- public connector pagination, metadata expansion, detector completion, and version support;
 - Prevent/Fix, erasure proof, Control Plane, certification, or compliance guarantees.
 
 ## Evidence and security decision
@@ -42,7 +45,7 @@ PyPI 0.1.0 contains the unsafe direct path and must not be used for Chroma scann
 | Asset | Security objective |
 |---|---|
 | Supplied source object/path | Do not inspect it in `read_chroma()` and do not access it as a filesystem path on disabled CLI new-scan paths. |
-| Source store | Do not import or construct Chroma, execute embeddings, or attempt network access. |
+| Operator production store | Never pass it to Chroma; direct paths fail before import, construction, filesystem access, embeddings, or network access. |
 | Existing report/state | Preserve bytes exactly; leave absent artifacts absent; create no temporary artifact. |
 | Operator-facing result | Exit 6 with one static message; emit no clean, scan, baseline, report, change, or delivery success signal. |
 | Monitor key and authenticated state | Preserve validation precedence, static failures, checkpoint integrity, and scope binding. |
@@ -51,6 +54,7 @@ PyPI 0.1.0 contains the unsafe direct path and must not be used for Chroma scann
 | Operator-provided snapshot | Treat it as hostile and privacy-sensitive; never claim that WP7B proves its quiescence, completeness, provenance, or atomic multi-file consistency. |
 | RAGLeakGuard work copy | Bound files, directories, depth, bytes, chunks, time, and free-space preflight; use restrictive permissions and do not return an incomplete copy. |
 | Ownership controls and lease | Authenticate privacy-minimal control documents, hold an exclusive native lock while the copy is usable, and clean only positively proved direct descendants. |
+| Private enumerator | Accept only the live held capability; enumerate completely within hard limits; expose counters only after child exit, semantic/effect agreement, and final capability validation. |
 
 ## Actors and assumptions
 
@@ -72,10 +76,29 @@ PyPI 0.1.0 contains the unsafe direct path and must not be used for Chroma scann
 | Attacker causes unbounded allocation or work | Hard maxima are 20,000 source files, 10,000 source directories, depth 16, 16 GiB per file, 64 GiB source bytes, 21,000 work files, 72 GiB work bytes, 1 MiB chunks, 1,800 seconds preparation, and 600 seconds cleanup/recovery; public values may only narrow them. | Free-space checks are time-of-check/time-of-use observations. A blocking kernel/filesystem call cannot be preempted by the cooperative monotonic deadline. |
 | Cleanup deletes an operator path or an active work copy | Random exclusive workspaces, authenticated owner/snapshot/lease documents, resolved direct-child containment, filesystem-object identity, same-device no-follow recursive deletion, and an exclusive native lease are required before removal. | A crash can leave residue. Recovery deliberately stops on corrupt, forged, ambiguous, or actively leased candidates, so manual investigation may be required. Cleanup is deletion, not certified erasure. |
 | Snapshot data or paths leak through the lifecycle | Control documents contain random identifiers only; failures are static, representations are redacted, and the private lifecycle produces no logs, console output, report, state, webhook, or network request. | The complete work copy necessarily contains the operator-provided bytes and is visible to the running account and administrators until cleanup. |
-| Private confinement is mistaken for connector support | The module and callable names are private, `__all__` is empty, and no CLI, connector, package extra, report, monitor, or webhook surface consumes them. WP7A disabled behavior is regression tested. | A future activation requires a separate issue, evidence, review, and human authorization; WP7B alone never establishes Chroma-version or connector safety. |
+| Chroma observes or mutates the production source through the private layer | WP7C accepts only a re-authenticated live WP7B capability and starts the exact local client with the internally derived disposable payload as its working and persistence directory. Parent and child validate the held lease; the parent revalidates after worker exit and before the receipt. | The operator snapshot and its work copy remain sensitive. In-process malicious code, administrators, kernel compromise, and unproved platform behavior are outside this private process boundary. |
+| Enumeration is incomplete, inconsistent, oversized, or mutates logical data | An authenticated ready-copy inventory precedes the worker. Exact migration/schema/catalog and record-bearing-table gates precede import; two explicitly paginated passes compare keyed collection, record, and canonical-content manifests plus counts. Every size, retained-entry, time, wait, IPC, and effect inventory has a hard ceiling. Post-exit semantic evidence must equal preflight evidence through a second final check immediately before capability validation and receipt creation. | Native calls can block below Python. Exact candidate evidence is environment-specific and can regress with transitive dependencies or runner changes. |
+| Worker leaks data, starts another process, or attempts egress | The work path is supplied only as the controlled child working directory, not argv, environment, or IPC. The request contains fixed nonsensitive controls; the receipt contains counters only. Child stdout/stderr, nested processes, sockets, DNS, telemetry export, proxies, credentials, and embedding/model acquisition are denied; matrix jobs add OS-level outbound denial. | Python interception is not a general sandbox. The child inherits process permissions, and OS-level evidence proves only the exact tested environment. |
+| Private confinement or enumeration is mistaken for connector support | Both modules and callable names are private, `__all__` is empty, and no CLI, connector, detector, package extra, report, monitor, or webhook surface consumes them. WP7A disabled behavior is regression tested. | A future activation requires a separate WP7D issue, evidence, review, and human authorization. A counter receipt is not detector or scan completion, and private candidate evidence is not a support claim. |
 | Hostile path leaks through evaluation or errors | `read_chroma()` is a non-generator and raises one static public exception without coercion, formatting, attribute access, comparison, iteration, hashing, `str`, or `repr`. CLI output is also static. | Monitor scope authentication must process the operator-provided path string before pending recovery; this is not filesystem source access. |
 | Disabled scan corrupts an artifact or creates false evidence | Exit 6 precedes report work and scan-derived state transitions. Byte-preservation and absent-artifact tests cover reports, state, and temporary files. | Host filesystem compromise remains outside the process contract. |
 | Disabled monitor masks key/state or pending-alert failure | Webhook configuration and authenticated key/state validation retain precedence. A pending alert retains WP6 configuration, backoff, retry, transport, ambiguous-clear, and recovery semantics. | A permanently pending alert can block new scans indefinitely; new scans are independently disabled. |
+
+WP7C classifies durable effects only inside the disposable work copy. Existing `chroma.sqlite3`
+bytes may change only while exact schema, migrations, catalog, record queue, metadata, full-text,
+sequence, configuration, and maintenance evidence remains equal. Existing native vector-segment
+files may change only under a catalogued UUID directory and only for the explicit names
+`data_level0.bin`, `header.bin`, `length.bin`, `link_lists.bin`, and `index_metadata.pickle`.
+Creating or removing a path, changing any other path, exceeding 4,096 effect paths, or observing an
+uncatalogued segment fails. The allowlist does not claim byte immutability, explain a dependency's
+internal write, or make the operator source a Chroma target.
+
+The ready-copy evidence is keyed by WP7B's 32-byte workspace authentication key and retained only
+in the live capability. Parent semantic evidence uses a lease-scoped HMAC-derived key. The child
+generates one random 32-byte session key for its two passes, with separate identity, content, and
+collision-witness domains. Derived keys, the child key, and tokens remain process memory only and
+are never IPC fields or receipt fields. Python cannot promise immediate secret zeroization, and
+private types are not a sandbox against malicious code already executing in-process.
 | Pending recovery begins a source scan or creates a new alert | Recovery terminates after one due attempt or one established failure branch. It may only update retry metadata or atomically clear the existing pending entry. | Network-send and clear crashes remain ambiguous and may duplicate delivery. |
 | Chroma re-enters through packaging | The Chroma optional dependency is removed; wheel/sdist metadata and clean no-Chroma installation are tested. | PyPI 0.1.0 remains unsafe for Chroma scanning until a separately authorized human action changes public package state. |
 | Public prose overstates capability | English, Traditional Chinese, CLI help, architecture, threat model, security, contribution, release, and package claims are regression tested. | Historical artifacts require context and must not be read as current behavior. |
