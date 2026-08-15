@@ -83,6 +83,11 @@ PyPI 0.1.0 contains the unsafe direct path and must not be used for Chroma scann
 | Hostile path leaks through evaluation or errors | `read_chroma()` is a non-generator and raises one static public exception without coercion, formatting, attribute access, comparison, iteration, hashing, `str`, or `repr`. CLI output is also static. | Monitor scope authentication must process the operator-provided path string before pending recovery; this is not filesystem source access. |
 | Disabled scan corrupts an artifact or creates false evidence | Exit 6 precedes report work and scan-derived state transitions. Byte-preservation and absent-artifact tests cover reports, state, and temporary files. | Host filesystem compromise remains outside the process contract. |
 | Disabled monitor masks key/state or pending-alert failure | Webhook configuration and authenticated key/state validation retain precedence. A pending alert retains WP6 configuration, backoff, retry, transport, ambiguous-clear, and recovery semantics. | A permanently pending alert can block new scans indefinitely; new scans are independently disabled. |
+| Pending recovery begins a source scan or creates a new alert | Recovery terminates after one due attempt or one established failure branch. It may only update retry metadata or atomically clear the existing pending entry. | Network-send and clear crashes remain ambiguous and may duplicate delivery. |
+| Chroma re-enters through packaging | The Chroma optional dependency is removed; wheel/sdist metadata and clean no-Chroma installation are tested. | PyPI 0.1.0 remains unsafe for Chroma scanning until a separately authorized human action changes public package state. |
+| Public prose overstates capability | English, Traditional Chinese, CLI help, architecture, threat model, security, contribution, release, and package claims are regression tested. | Historical artifacts require context and must not be read as current behavior. |
+| Detector false negatives mistaken for absence | Disabled CLI paths produce no clean report. Library detection remains explicitly best-effort. | No detector is complete; importing callers remain responsible for raw in-memory findings. |
+| Alert replay or duplicate delivery | Existing HMAC framing, freshness, nonce cache, stable delivery ID, and durable atomic receiver interface remain unchanged. | Exactly-once, unconditional at-least-once, downstream processing, and human notification are not proved. |
 
 WP7C classifies durable effects only inside the disposable work copy. Existing `chroma.sqlite3`
 bytes may change only while exact schema, migrations, catalog, record queue, metadata, full-text,
@@ -99,11 +104,6 @@ generates one random 32-byte session key for its two passes, with separate ident
 collision-witness domains. Derived keys, the child key, and tokens remain process memory only and
 are never IPC fields or receipt fields. Python cannot promise immediate secret zeroization, and
 private types are not a sandbox against malicious code already executing in-process.
-| Pending recovery begins a source scan or creates a new alert | Recovery terminates after one due attempt or one established failure branch. It may only update retry metadata or atomically clear the existing pending entry. | Network-send and clear crashes remain ambiguous and may duplicate delivery. |
-| Chroma re-enters through packaging | The Chroma optional dependency is removed; wheel/sdist metadata and clean no-Chroma installation are tested. | PyPI 0.1.0 remains unsafe for Chroma scanning until a separately authorized human action changes public package state. |
-| Public prose overstates capability | English, Traditional Chinese, CLI help, architecture, threat model, security, contribution, release, and package claims are regression tested. | Historical artifacts require context and must not be read as current behavior. |
-| Detector false negatives mistaken for absence | Disabled CLI paths produce no clean report. Library detection remains explicitly best-effort. | No detector is complete; importing callers remain responsible for raw in-memory findings. |
-| Alert replay or duplicate delivery | Existing HMAC framing, freshness, nonce cache, stable delivery ID, and durable atomic receiver interface remain unchanged. | Exactly-once, unconditional at-least-once, downstream processing, and human notification are not proved. |
 
 ## Release and review triggers
 
