@@ -89,7 +89,10 @@ jobs:
           sudo mkdir -p /mnt/rlg-wp7c-ext4
           sudo mount -o loop "${RUNNER_TEMP}/rlg-wp7c-ext4.img" /mnt/rlg-wp7c-ext4
           sudo mkdir /mnt/rlg-wp7c-ext4/home
+          sudo mkdir /mnt/rlg-wp7c-ext4/repository
+          git archive --format=tar HEAD | sudo tar -xf - -C /mnt/rlg-wp7c-ext4/repository
           sudo chown -R "${test_user}:${test_user}" /mnt/rlg-wp7c-ext4
+          sudo -u "${test_user}" test -r /mnt/rlg-wp7c-ext4/repository/pytest.toml
           test "$(findmnt -n -o FSTYPE /mnt/rlg-wp7c-ext4)" = ext4
 
       - name: Assert native APFS
@@ -145,6 +148,7 @@ jobs:
           TMPDIR: /mnt/rlg-wp7c-ext4
         run: |
           python_path="$(command -v python)"
+          cd /mnt/rlg-wp7c-ext4/repository
           sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7C_OS_EGRESS_DENIED,TMPDIR \
             -u "${RLG_WP7C_TEST_USER}" env HOME=/mnt/rlg-wp7c-ext4/home \
             "${python_path}" -m pytest tests/test_chroma_snapshot_private.py -q --basetemp /mnt/rlg-wp7c-ext4/focused
@@ -161,6 +165,7 @@ jobs:
           TMPDIR: /mnt/rlg-wp7c-ext4
         run: |
           python_path="$(command -v python)"
+          cd /mnt/rlg-wp7c-ext4/repository
           sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7C_OS_EGRESS_DENIED,TMPDIR \
             -u "${RLG_WP7C_TEST_USER}" env HOME=/mnt/rlg-wp7c-ext4/home \
             "${python_path}" -m pytest -q --basetemp /mnt/rlg-wp7c-ext4/complete

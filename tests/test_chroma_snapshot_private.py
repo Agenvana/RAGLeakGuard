@@ -1058,6 +1058,8 @@ def test_private_workflow_has_exact_cells_native_gates_and_no_artifact_upload():
         "RLG_WP7C_OS_EGRESS_DENIED",
         "RLG_WP7C_TEST_UID",
         "useradd --system --user-group --no-create-home",
+        "git archive --format=tar HEAD",
+        "cd /mnt/rlg-wp7c-ext4/repository",
         "sudo --preserve-env=ANONYMIZED_TELEMETRY",
         "iptables",
         "sandbox-exec",
