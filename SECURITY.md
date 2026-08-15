@@ -14,7 +14,9 @@ RAGLeakGuard is an early-development security scanner. Detection is best-effort,
 This is a pre-1.0 project. Compatibility and the supported runtime matrix may narrow as evidence
 improves. CI now exercises the WP7B filesystem evidence on ext4/Python 3.9, APFS/Python 3.9,
 NTFS/Python 3.9, and NTFS/Python 3.12. That finite evidence matrix is not a documented supported
-release matrix; see the [release process](docs/RELEASE_PROCESS.md).
+release matrix. WP7D separately activates exact ChromaDB 1.5.9 only on Linux/ext4 Python
+3.10–3.12, macOS 15/APFS Python 3.12, and Windows/NTFS Python 3.12; see the
+[release process](docs/RELEASE_PROCESS.md).
 
 ## Reporting a vulnerability
 
@@ -50,12 +52,16 @@ independent review at exact implementation head
 `5db765689d35eec8ba918f0f616d5fea34e56955`. It accepts a complete filesystem snapshot created
 separately by the operator, copies it under hard bounds into a restrictive owned workspace, checks
 observed source/copy stability, and authenticates ownership and lease controls for cleanup and
-recovery. It is private and has no Chroma or public scanning consumer.
+recovery. WP7D implements one aggregate-only consumer for exact ChromaDB 1.5.9 on the finite
+activation matrix. Detection runs inside the isolated WP7C worker; raw source fields never cross
+IPC, and completion is returned only after connector/detector equality, termination, revalidation,
+cleanup, and atomic aggregate-report finalization.
 
-Every direct local Chroma new-scan path still fails closed, and no source-scanning connector is
-available. `read_chroma()` fails synchronously without inspecting its argument, importing Chroma,
-touching the filesystem, initializing detection, or constructing a client. Valid disabled CLI paths
-exit 6 without creating or replacing a report, state, temporary artifact, new alert, or webhook.
+Every direct/live local Chroma new-scan path remains disabled and fails closed. `read_chroma()` fails synchronously
+without inspecting its arguments, importing Chroma, touching the filesystem, initializing
+detection, or constructing a client. Legacy CLI `--path` requests exit 2 before source access.
+Monitor new scans remain unavailable and cannot create a report, state transition, new alert, or
+webhook.
 Presidio/spaCy detection, the opt-in Australian locale pack, versioned aggregate risk-policy/report
 helpers, explicit monitor keys, authenticated privacy-minimal version-3 state, and the reviewed
 protocol-v2 one-entry outbox remain in the repository. An existing pending alert retains precedence
@@ -63,8 +69,8 @@ and may perform the established retry transition or approved atomic clear after 
 without a new source scan. See the [architecture](docs/ARCHITECTURE.md), [monitor state
 contract](docs/MONITOR_STATE.md), and [webhook protocol](docs/WEBHOOK_PROTOCOL.md).
 
-**Known limitations:** the private WP7B foundation relies on the operator to provide a complete,
-quiescent filesystem snapshot; its observations do not prove provenance, completeness, source
+**Known limitations:** the operator—not RAGLeakGuard—must provide a complete, quiescent/full-filesystem
+snapshot; the implementation's observations do not prove provenance, completeness, source
 quiescence, or transactionally atomic multi-file consistency. Work-copy data remains visible to the
 running account and administrators until cleanup, cleanup is not certified erasure, and crashes or
 ambiguous ownership can leave residue for manual investigation. ChromaDB 1.5.0 and 1.5.9 showed
@@ -77,11 +83,9 @@ only acceptable response headers. Detector completeness, exactly-once delivery, 
 at-least-once delivery, downstream processing, human notification, and historical v1/v2 alert
 recovery are not proved.
 
-**Planned or under review:** snapshot-backed public Chroma scanning, outbox
-administration/multiple destinations, and reproducible release provenance. Public snapshot-backed
-scanning is unavailable and not implemented; the completed private confinement foundation is not a
-connector, and no activation or future-support commitment is made. Direct Chroma access remains
-disabled.
+**Planned or under review:** outbox administration/multiple destinations and reproducible release
+provenance. General Chroma support, other versions or environments, direct/live scanning, and
+monitor new scans are not implemented. No expansion or future-support commitment is made.
 
 The Prevent/Fix layer, erasure proof, Control Plane, multi-tenancy, vault/KMS, compliance certification, and assurance profile are not implemented and are outside the current supported surface.
 

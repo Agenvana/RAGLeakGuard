@@ -64,26 +64,30 @@ A locale contribution must:
 
 ## Connectors and integrations
 
-**Implemented now:** no source-scanning connector is available. Direct local Chroma entry points fail closed before Chroma import or source access. [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred as `not planned`, not completed. Executable endpoint evidence established durable mutation with ChromaDB 1.5.0 and 1.5.9; other versions have not established an acceptable read-only boundary.
+**Implemented now:** one aggregate-only operator-snapshot Chroma connector is available for exact
+ChromaDB 1.5.9 on Linux/ext4 Python 3.10–3.12, macOS 15/APFS Python 3.12, and Windows/NTFS Python
+3.12. Direct/live Chroma entry points remain disabled and fail closed before Chroma import or source access.
+[Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred as `not planned`, not
+completed. Executable endpoint evidence established durable mutation with ChromaDB 1.5.0 and 1.5.9;
+1.5.0 remains private evidence only and every other version is rejected publicly.
 
-Snapshot-backed Chroma scanning remains unavailable. WP7B contains the private, bounded
-filesystem-confinement foundation for a complete snapshot that the operator created separately.
-WP7C privately evaluates exact candidate dependencies inside a held WP7B work copy and returns only
-an opaque counter receipt after bounded two-pass enumeration, teardown, semantic revalidation, and
-effect classification. It exposes no source rows or detector input and is not detector or scan
-completion. Neither layer proves quiescence or atomic multi-file consistency or exposes a public
-function, CLI, connector, package extra, report, monitor, or webhook path.
+WP7D consumes a held WP7B work copy through WP7C's bounded two-pass enumeration and runs detection
+inside the isolated worker. It exposes bounded connector counters and detector entity-type counts
+only after exact equality, teardown, semantic/capability revalidation, proven cleanup, and atomic
+aggregate-report finalization. The operator—not RAGLeakGuard—must create a complete,
+quiescent/full-filesystem snapshot separately. The implementation does not prove provenance,
+quiescence, completeness, or atomic multi-file consistency. Monitor new scans remain unavailable.
 
-Do not activate or extend these private layers into a scanning surface, claim a supported Chroma
-range, or commit to future support without a separate WP7D issue, executable evidence, exact-commit
-independent review, and human authorization. PyPI 0.1.0 contains the unsafe direct Chroma path and
-must not be used for Chroma scanning.
+Do not widen the version/environment matrix, limits, IPC/report surface, retry policy, or connector
+scope without a separate issue, executable evidence, exact-commit independent review, and human authorization.
+PyPI 0.1.0 contains the unsafe direct Chroma path and must not be used for Chroma
+scanning; no corrective release has been published.
 
 The private foundation passed independent review at exact implementation head
 `128decb3e0d78825e884f6dce019898b568c6ba2` and was merged through
 [PR #20](https://github.com/Agenvana/RAGLeakGuard/pull/20) as merge commit
-`5db765689d35eec8ba918f0f616d5fea34e56955`. That review record does not authorize a public
-snapshot consumer, direct Chroma access, a release, or WP7D.
+`5db765689d35eec8ba918f0f616d5fea34e56955`. That review record does not authorize direct/live
+Chroma access, a release, or any expansion beyond the finite WP7D boundary.
 
 Changes to the private snapshot lifecycle must preserve its hard maxima, no-follow regular-object
 allowlist, same-device containment, observed-stability checks, restrictive work permissions,
@@ -96,6 +100,12 @@ complete migration manifests, local-only settings, application-level read-only c
 pagination and canonicalization, keyed bounded manifests, worker termination before cleanup,
 static privacy-safe failures, zero child output, OS egress evidence, and explicit classification of
 all work-copy effects. Run its isolated candidate matrix as well as the complete no-Chroma suite.
+
+Changes to the public WP7D surface must preserve aggregate-only results, first-pass-only detection,
+exact connector/detector count equality, pre-source acknowledgement/locale/source-ID/runtime/host
+gates, exact ChromaDB 1.5.9 activation, report atomicity, cleanup-before-result ordering, recursive
+privacy canaries, and all five mandatory native-filesystem cells. Keep the ten-cell WP7C private
+matrix intact.
 
 Any future connector change requires an independently reviewed read-only boundary and must test application and dependency effects, bounds, completeness, malformed input, cancellation, concurrent mutation, filesystem mutation, and outbound network behavior. An incomplete or inconsistent scan must never report success.
 

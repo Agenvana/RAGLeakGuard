@@ -17,6 +17,7 @@ from ragleakguard.detect import (
 )
 
 
+EXIT_SCAN_FAILURE = 1
 EXIT_USAGE = 2
 EXIT_DETECTION_RUNTIME = 3
 EXIT_MONITOR_STATE = 4
@@ -26,7 +27,10 @@ EXIT_CONNECTOR_UNAVAILABLE = 6
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
-    help="Direct source-store scanning is disabled; credential helpers remain available.",
+    help=(
+        "Bounded operator-snapshot Chroma scanning is available; direct/live "
+        "source-store scanning remains disabled."
+    ),
 )
 
 
@@ -225,13 +229,35 @@ def generate_webhook_secret(
 @app.command()
 def scan(
     source: str = typer.Option(
-        ..., "--source", help="Source type: chroma (direct scanning is disabled)"
+        ..., "--source", help="Source type: chroma (operator snapshots only)"
     ),
-    path: str = typer.Option(
-        None, "--path", help="Required store-scope value; the source is not accessed"
+    path: Optional[str] = typer.Option(
+        None,
+        "--path",
+        help="Rejected legacy direct/live store path",
+    ),
+    snapshot: Optional[str] = typer.Option(
+        None,
+        "--snapshot",
+        help="Offline, complete, operator-created Chroma snapshot directory",
+    ),
+    work_parent: Optional[str] = typer.Option(
+        None,
+        "--work-parent",
+        help="Existing private directory for the disposable validated copy",
+    ),
+    source_id: Optional[str] = typer.Option(
+        None,
+        "--source-id",
+        help="Pseudonymous ASCII source identifier for aggregate reporting",
+    ),
+    acknowledge_offline_complete_snapshot: bool = typer.Option(
+        False,
+        "--acknowledge-offline-complete-snapshot",
+        help="Confirm the supplied directory is an offline, complete snapshot",
     ),
     report: str = typer.Option(
-        "report.md", "--report", help="Report path; not accessed while scanning is disabled"
+        "report.md", "--report", help="Atomically finalized aggregate Markdown report"
     ),
     locale: str = typer.Option(
         None,
@@ -239,20 +265,82 @@ def scan(
         help="Locale pack: au (case-insensitive; surrounding whitespace ignored)",
     ),
 ):
-    """Validate a Chroma scan request, then fail closed before source access.
+    """Detect sensitive-data types in one bounded operator snapshot.
 
-    Exit codes: 2 = usage/locale error · 6 = direct Chroma scanning disabled.
+    Direct/live Chroma access and legacy --path requests remain disabled.
+
+    Exit codes: 0 = aggregate report durably finalized; 1 = scan/report failure;
+    2 = usage/locale error; 3 = detection runtime unavailable; 6 = candidate
+    dependency or activation environment unavailable.
     """
     source = source.lower()
-    if source == "chroma":
-        if not path:
-            print("[red]--path is required for chroma (the store directory).[/]")
-            raise typer.Exit(EXIT_USAGE)
-        _validated_locale_syntax(locale)
-        _abort_chroma_unavailable()
-    else:
+    if source != "chroma":
         print(f"[red]Source '{source}' isn't supported.[/] No source connector is available.")
         raise typer.Exit(EXIT_USAGE)
+    if path is not None:
+        print(
+            "[red]Legacy --path is rejected.[/] Direct/live Chroma access remains "
+            "disabled; supply an operator-created snapshot."
+        )
+        raise typer.Exit(EXIT_USAGE)
+    if snapshot is None or work_parent is None or source_id is None:
+        print(
+            "[red]Snapshot scan arguments are incomplete.[/] Provide --snapshot, "
+            "--work-parent, and --source-id."
+        )
+        raise typer.Exit(EXIT_USAGE)
+    if not acknowledge_offline_complete_snapshot:
+        print(
+            "[red]Snapshot acknowledgement is required.[/] Confirm an offline, "
+            "complete operator-created snapshot."
+        )
+        raise typer.Exit(EXIT_USAGE)
+
+    from ragleakguard import connectors
+    from ragleakguard import report as reporting
+
+    try:
+        result = connectors.scan_chroma_snapshot(
+            snapshot,
+            work_parent,
+            source_id=source_id,
+            acknowledge_offline_complete_snapshot=True,
+            locale=locale,
+        )
+    except DetectionError as error:
+        _abort_detection(error)
+    except connectors.InvalidChromaSnapshotRequest:
+        print("[red]Snapshot scan request is invalid.[/]")
+        raise typer.Exit(EXIT_USAGE)
+    except connectors.ChromaSnapshotUnavailableError:
+        print(
+            "[red]Snapshot-backed Chroma scanning is unavailable in this environment.[/]"
+        )
+        raise typer.Exit(EXIT_CONNECTOR_UNAVAILABLE)
+    except connectors.ChromaSnapshotScanError:
+        print(
+            "[red]Snapshot-backed Chroma scan failed closed.[/] No report was replaced."
+        )
+        raise typer.Exit(EXIT_SCAN_FAILURE)
+
+    try:
+        aggregate_report = reporting.build_report(
+            dict(result.detector.finding_counts_by_type),
+            result.records_completed,
+            result.detector.records_with_findings,
+            source="chroma-snapshot",
+            path=source_id,
+        )
+        reporting._finalize_report(aggregate_report, report)
+    except BaseException:
+        print(
+            "[red]Aggregate report finalization failed.[/] No success was reported."
+        )
+        raise typer.Exit(EXIT_SCAN_FAILURE)
+    print(
+        "[green]Snapshot-backed Chroma scan completed; aggregate report finalized.[/]"
+    )
+    raise typer.Exit(0)
 
 
 def _deliver_pending_alert(
@@ -368,7 +456,7 @@ def monitor(
 ):
     """Recover an existing pending alert; fail closed before every new scan.
 
-    Every run requires --key-file. New baselines and scans are unavailable.
+    Every run requires --key-file. New scans are disabled; new baselines are unavailable.
 
     Exit codes: 0 = pending alert accepted and cleared; 2 = usage/locale error;
     4 = monitor key/state failure; 5 = webhook pending/configuration/preparation/

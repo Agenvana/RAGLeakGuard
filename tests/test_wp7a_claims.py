@@ -22,8 +22,13 @@ ENGLISH_CURRENT = (
 )
 
 
-def test_package_metadata_has_no_chroma_runtime_dependency_or_capability_claim():
+def test_package_metadata_keeps_chroma_optional_and_exact_for_snapshot_activation():
     document = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    base_dependencies = re.search(
+        r"^dependencies\s*=\s*\[(.*?)\]",
+        document,
+        re.MULTILINE | re.DOTALL,
+    ).group(1)
     optional_dependencies = re.search(
         r"^\[project\.optional-dependencies\]\s*(.*?)(?=^\[)",
         document,
@@ -44,9 +49,9 @@ def test_package_metadata_has_no_chroma_runtime_dependency_or_capability_claim()
         r'"([^"]+)"', re.search(r"exclude\s*=\s*\[(.*?)\]", sdist, re.DOTALL).group(1)
     )
 
-    assert "chroma" not in optional_dependencies.lower()
-    assert "chromadb" not in document.lower()
-    assert "chroma" not in description.lower()
+    assert "chromadb" not in base_dependencies.lower()
+    assert 'chroma-snapshot = ["chromadb==1.5.9"]' in optional_dependencies
+    assert "operator-snapshot chroma" in description.lower()
     assert "scan your ai's vector database" not in description.lower()
     assert re.search(r'^requires-python\s*=\s*">=3\.9"$', document, re.MULTILINE)
 
@@ -66,16 +71,14 @@ def test_package_metadata_has_no_chroma_runtime_dependency_or_capability_claim()
 
 
 @pytest.mark.parametrize("path", ENGLISH_CURRENT, ids=lambda path: path.name)
-def test_current_english_claim_surfaces_record_wp7a_safety_boundary(path):
+def test_current_english_claim_surfaces_record_wp7d_safety_boundary(path):
     text = path.read_text(encoding="utf-8")
     lowered = text.lower()
 
-    assert "1.5.0" in text and "1.5.9" in text
-    assert "other" in lowered and "read-only boundary" in lowered
-    assert "no source-scanning connector" in lowered or "no source-scanning connector is available" in lowered
-    assert "snapshot" in lowered and (
-        "unavailable" in lowered or "not implemented" in lowered
-    )
+    assert "1.5.9" in text
+    assert "operator" in lowered and "snapshot" in lowered
+    assert "direct/live" in lowered and "disabled" in lowered
+    assert "complete" in lowered and "quiescent" in lowered
 
 
 @pytest.mark.parametrize(
@@ -98,14 +101,21 @@ def test_public_claim_surfaces_warn_against_pypi_010_chroma_scanning(path):
     assert "must not be used" in text or "不得用於" in text
 
 
-def test_english_and_traditional_chinese_readmes_have_no_working_chroma_quickstart():
+def test_english_and_traditional_chinese_readmes_offer_only_snapshot_quickstart():
     for name in ("README.md", "README.zh-TW.md"):
         text = (ROOT / name).read_text(encoding="utf-8")
         lowered = text.lower()
-        assert "ragleakguard scan --source chroma" not in lowered
+        assert "ragleakguard scan --source chroma" in lowered
+        for option in (
+            "--snapshot",
+            "--work-parent",
+            "--source-id",
+            "--acknowledge-offline-complete-snapshot",
+            "--report",
+        ):
+            assert option in lowered
         assert "ragleakguard monitor --source chroma" not in lowered
-        assert "[chroma" not in lowered
-        assert ",chroma" not in lowered
+        assert "chroma-snapshot" in lowered
         assert "safe to run against production" not in lowered
         assert "read-only; safe" not in lowered
 
@@ -114,14 +124,11 @@ def test_traditional_chinese_readme_states_all_required_current_facts():
     text = (ROOT / "README.zh-TW.md").read_text(encoding="utf-8")
 
     for phrase in (
-        "目前沒有任何可用的來源掃描連接器",
-        "直接掃描本機 Chroma 已停用",
-        "1.5.0",
+        "操作員快照",
+        "直接／即時 Chroma 掃描仍停用",
         "1.5.9",
-        "尚未建立可接受的唯讀邊界",
-        "Issue #15",
-        "並未完成",
-        "目前未實作",
+        "完整且靜止",
+        "不會證明快照的來源、靜止狀態、完整性或原子一致性",
         "PyPI `0.1.0`",
         "不得用於 Chroma 掃描",
     ):
@@ -135,15 +142,22 @@ def test_cli_help_advertises_disabled_chroma_and_exit_six(command):
 
     assert result.exit_code == 0
     assert "disabled" in output.lower()
-    assert "6 = direct Chroma scanning disabled" in output
+    if command == "scan":
+        assert "6 = candidate dependency or activation environment unavailable" in output
+    else:
+        assert "6 = direct Chroma scanning disabled" in output
     assert "pinecone" not in output.lower()
     assert "production" not in output.lower()
     if command == "monitor":
         assert "create a new baseline" not in output.lower()
 
 
-def test_current_docs_do_not_offer_a_chroma_scan_or_monitor_command():
+def test_current_docs_never_offer_direct_path_or_monitor_chroma_commands():
     for path in ENGLISH_CURRENT + (ROOT / "README.zh-TW.md",):
         text = path.read_text(encoding="utf-8")
-        assert not re.search(r"ragleakguard\s+scan\s+--source\s+chroma", text, re.I)
+        assert not re.search(
+            r"ragleakguard\s+scan\s+--source\s+chroma(?:(?!```)[\s\S])*?--path",
+            text,
+            re.I,
+        )
         assert not re.search(r"ragleakguard\s+monitor\s+--source\s+chroma", text, re.I)

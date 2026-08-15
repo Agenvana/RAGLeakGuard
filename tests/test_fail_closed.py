@@ -97,12 +97,24 @@ def _patch_source(monkeypatch, items):
 
 def _command_args(command, tmp_path, locale=None):
     store_path = tmp_path / PATH_CANARY
-    args = [command, "--source", "chroma", "--path", str(store_path)]
+    args = [command, "--source", "chroma"]
     artifact = tmp_path / ("report.md" if command == "scan" else "state.json")
     if command == "scan":
-        args += ["--report", str(artifact)]
+        args += [
+            "--snapshot",
+            str(store_path),
+            "--work-parent",
+            str(tmp_path / "private-work-path-canary"),
+            "--source-id",
+            "synthetic-source",
+            "--acknowledge-offline-complete-snapshot",
+            "--report",
+            str(artifact),
+        ]
     else:
         args += [
+            "--path",
+            str(store_path),
             "--state",
             str(artifact),
             "--key-file",
@@ -144,7 +156,7 @@ def test_cli_locale_failure_on_zero_item_source_creates_no_artifact_or_alert(
     _assert_private_failure(result)
 
 
-def test_scan_disabled_path_precedes_detection_runtime_and_preserves_report(
+def test_scan_legacy_path_precedes_detection_runtime_and_preserves_report(
     monkeypatch, tmp_path
 ):
     detector_calls = []
@@ -161,17 +173,24 @@ def test_scan_disabled_path_precedes_detection_runtime_and_preserves_report(
         "detect",
         lambda *args, **kwargs: detector_calls.append("detect"),
     )
-    args, report = _command_args("scan", tmp_path)
+    args = [
+        "scan",
+        "--source",
+        "chroma",
+        "--path",
+        str(tmp_path / PATH_CANARY),
+    ]
+    report = tmp_path / "report.md"
     report.write_bytes(b"existing-report-sentinel")
     before = report.read_bytes()
 
     result = CliRunner().invoke(cli.app, args)
 
-    assert result.exit_code == cli.EXIT_CONNECTOR_UNAVAILABLE
+    assert result.exit_code == cli.EXIT_USAGE
     assert report.read_bytes() == before
     assert not source_calls
     assert not detector_calls
-    assert "Local Chroma scanning is disabled" in result.output
+    assert "Legacy --path is rejected" in result.output
     _assert_private_failure(result)
 
 
@@ -183,12 +202,24 @@ def test_scan_supported_locale_forms_remain_compatible(
     monkeypatch, tmp_path, locale_arg, normalized
 ):
     normalized_locales = []
+    prepared = []
     real_normalize = detection.normalize_locale
     monkeypatch.setattr(
-        cli,
+        connectors,
         "normalize_locale",
         lambda value: normalized_locales.append(real_normalize(value))
         or normalized_locales[-1],
+    )
+    monkeypatch.setattr(connectors, "validate_detection_runtime", lambda value: value)
+    monkeypatch.setattr(
+        connectors._chroma_snapshot,
+        "_public_activation_gate",
+        lambda: (_ for _ in ()).throw(RuntimeError()),
+    )
+    monkeypatch.setattr(
+        connectors._snapshot,
+        "_prepare_snapshot",
+        lambda *args, **kwargs: prepared.append((args, kwargs)),
     )
     source_calls = _patch_source(monkeypatch, [SYNTHETIC_ITEM])
     args, report = _command_args("scan", tmp_path, locale=locale_arg)
@@ -197,9 +228,10 @@ def test_scan_supported_locale_forms_remain_compatible(
 
     assert result.exit_code == cli.EXIT_CONNECTOR_UNAVAILABLE
     assert normalized_locales == [normalized]
+    assert prepared == []
     assert not source_calls
     assert not report.exists()
-    assert "Local Chroma scanning is disabled" in result.output
+    assert "unavailable" in result.output
 
 
 def test_monitor_new_baseline_is_disabled_without_creating_state(monkeypatch, tmp_path):
@@ -232,7 +264,10 @@ def test_cli_help_advertises_only_implemented_locale_and_failure_exit(command):
     assert "Locale pack: au" in normalized_output
     assert not any(locale in normalized_output for locale in ("uk |", "sg |", "in ("))
     assert "2 = usage/locale error" in normalized_output
-    assert "6 = direct Chroma scanning disabled" in normalized_output
+    if command == "scan":
+        assert "6 = candidate dependency or activation environment unavailable" in normalized_output
+    else:
+        assert "6 = direct Chroma scanning disabled" in normalized_output
     if command == "monitor":
         assert "4 = monitor key/state failure" in normalized_output
         assert "--key-file" in normalized_output

@@ -1,6 +1,6 @@
 # Monitor key, state, and durable outbox contract
 
-This document describes the implemented version-3 local monitor checkpoint and its one-entry authenticated webhook outbox. Direct local Chroma new scans are disabled and no source-scanning connector is currently available. A completed pending-alert recovery transition is not proof of detector or connector completeness, production safety, compliance, webhook delivery under every failure, downstream processing, or human notification.
+This document describes the implemented version-3 local monitor checkpoint and its one-entry authenticated webhook outbox. Direct/live Chroma and monitor new scans are disabled. The separate exact-1.5.9 operator-snapshot CLI requires the operator to create a complete, quiescent/full-filesystem snapshot; monitor does not use it. A completed pending-alert recovery transition is not proof of detector or connector completeness, production safety, compliance, webhook delivery under every failure, downstream processing, or human notification.
 
 ## Operator workflow
 
@@ -136,10 +136,11 @@ Exit behavior is:
 
 ## Residual risks and non-claims
 
-- No source-scanning connector is available. ChromaDB 1.5.0 and 1.5.9 exhibited durable mutation;
-  other versions have not established an acceptable read-only boundary. WP7B's completed private
-  operator-snapshot confinement foundation is not used by monitor. Snapshot-backed public scanning
-  remains unavailable and not implemented, and direct Chroma access remains disabled.
+- ChromaDB 1.5.0 and 1.5.9 exhibited durable mutation; other versions have not established an
+  acceptable read-only boundary. The bounded operator-snapshot connector activates exact 1.5.9 on
+  its finite matrix, but is not used by monitor. RAGLeakGuard does not prove snapshot provenance,
+  quiescence, completeness, or atomic consistency. Direct/live access and monitor new scans remain
+  disabled.
 - Exact path spelling binds scope. Key compromise, insecure backup, rollback to an older valid state, overlapping writers, local runtime compromise, Windows DACL configuration, and host filesystem behavior remain external risks.
 - One pending alert and one destination are supported. Receiver outage intentionally blocks all newer scans, potentially forever.
 - A crash during or after network transmission can be ambiguous. A clear failure can cause duplicate delivery.

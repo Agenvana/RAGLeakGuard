@@ -1,0 +1,235 @@
+name: WP7D operator-snapshot Chroma activation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wp7d-snapshot-activation:
+    name: WP7D / ${{ matrix.platform }} / Python ${{ matrix.python }} / Chroma ${{ matrix.chroma }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: Linux-ext4
+            python: "3.10"
+            chroma: "1.5.9"
+          - os: ubuntu-latest
+            platform: Linux-ext4
+            python: "3.11"
+            chroma: "1.5.9"
+          - os: ubuntu-latest
+            platform: Linux-ext4
+            python: "3.12"
+            chroma: "1.5.9"
+          - os: macos-15
+            platform: macOS15-APFS
+            python: "3.12"
+            chroma: "1.5.9"
+          - os: windows-latest
+            platform: Windows-NTFS
+            python: "3.12"
+            chroma: "1.5.9"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up exact Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install exact public candidate and evidence inputs
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[chroma-snapshot,detect,dev]" "chromadb==${{ matrix.chroma }}"
+          python -m spacy download en_core_web_sm
+          python -m pip check
+          python -m pip list --format=freeze --disable-pip-version-check
+          python -c "import importlib.metadata,sys; assert sys.version_info[:2] == tuple(map(int, '${{ matrix.python }}'.split('.'))); assert importlib.metadata.version('chromadb') == '${{ matrix.chroma }}'"
+
+      - name: Prepare explicitly mounted native ext4 volume
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin rlgwp7d
+          test_user=rlgwp7d
+          test_uid="$(id -u "${test_user}")"
+          test "${test_uid}" != "$(id -u)"
+          echo "RLG_WP7D_TEST_USER=${test_user}" >> "${GITHUB_ENV}"
+          echo "RLG_WP7D_TEST_UID=${test_uid}" >> "${GITHUB_ENV}"
+          truncate -s 2G "${RUNNER_TEMP}/rlg-wp7d-ext4.img"
+          mkfs.ext4 -q -F "${RUNNER_TEMP}/rlg-wp7d-ext4.img"
+          sudo mkdir -p /mnt/rlg-wp7d-ext4
+          sudo mount -o loop "${RUNNER_TEMP}/rlg-wp7d-ext4.img" /mnt/rlg-wp7d-ext4
+          sudo mkdir /mnt/rlg-wp7d-ext4/home
+          sudo mkdir /mnt/rlg-wp7d-ext4/repository
+          git archive --format=tar HEAD | sudo tar -xf - -C /mnt/rlg-wp7d-ext4/repository
+          sudo chown -R "${test_user}:${test_user}" /mnt/rlg-wp7d-ext4
+          sudo -u "${test_user}" test -r /mnt/rlg-wp7d-ext4/repository/pyproject.toml
+          test "$(findmnt -n -o FSTYPE /mnt/rlg-wp7d-ext4)" = ext4
+
+      - name: Assert native APFS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          test "$(sw_vers -productVersion | cut -d. -f1)" = 15
+          device="$(df "${RUNNER_TEMP}" | awk 'END {print $1}')"
+          test -n "${device}"
+          diskutil info "${device}" | grep -Eiq 'File System Personality:.*APFS'
+
+      - name: Assert native NTFS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $drive = [IO.Path]::GetPathRoot($env:RUNNER_TEMP).Substring(0, 1)
+          $volume = Get-Volume -DriveLetter $drive
+          if ($volume.FileSystem -ne 'NTFS') { throw 'Required NTFS evidence is absent.' }
+
+      - name: Deny outbound traffic for the test identity
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          test -n "${RLG_WP7D_TEST_UID}"
+          sudo iptables -I OUTPUT 1 -m owner --uid-owner "${RLG_WP7D_TEST_UID}" -j REJECT
+          sudo iptables -I OUTPUT 1 -o lo -j ACCEPT
+          sudo iptables -C OUTPUT -o lo -j ACCEPT
+          sudo iptables -C OUTPUT -m owner --uid-owner "${RLG_WP7D_TEST_UID}" -j REJECT
+
+      - name: Deny outbound traffic for the Python worker
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $rule = "RLG-WP7D-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $python = (Get-Command python).Source
+          New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $python -Action Block -Profile Any | Out-Null
+          "RLG_WP7D_FIREWALL_RULE=$rule" >> $env:GITHUB_ENV
+          $observed = Get-NetFirewallRule -DisplayName $rule
+          if ($observed.Enabled.ToString() -ne 'True' -or $observed.Action.ToString() -ne 'Block') {
+            throw 'Required Windows outbound-denial evidence is absent.'
+          }
+
+      - name: Run focused WP7D evidence on native ext4 with OS egress denial
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7D_ACTIVATION: "1"
+          RLG_WP7D_MANDATORY: "1"
+          RLG_WP7D_OS_EGRESS_DENIED: "1"
+          TMPDIR: /mnt/rlg-wp7d-ext4
+        run: |
+          python_path="$(command -v python)"
+          cd /mnt/rlg-wp7d-ext4/repository
+          sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7D_ACTIVATION,RLG_WP7D_MANDATORY,RLG_WP7D_OS_EGRESS_DENIED,TMPDIR \
+            -u "${RLG_WP7D_TEST_USER}" env HOME=/mnt/rlg-wp7d-ext4/home \
+            "${python_path}" -m pytest tests/test_wp7d_snapshot_activation.py tests/test_chroma_snapshot_private.py -q --basetemp /mnt/rlg-wp7d-ext4/focused
+
+      - name: Run complete suite on native ext4 with OS egress denial
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7D_ACTIVATION: "1"
+          RLG_WP7D_MANDATORY: "1"
+          RLG_WP7D_OS_EGRESS_DENIED: "1"
+          TMPDIR: /mnt/rlg-wp7d-ext4
+        run: |
+          python_path="$(command -v python)"
+          cd /mnt/rlg-wp7d-ext4/repository
+          sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7D_ACTIVATION,RLG_WP7D_MANDATORY,RLG_WP7D_OS_EGRESS_DENIED,TMPDIR \
+            -u "${RLG_WP7D_TEST_USER}" env HOME=/mnt/rlg-wp7d-ext4/home \
+            "${python_path}" -m pytest -q --basetemp /mnt/rlg-wp7d-ext4/complete
+
+      - name: Run focused WP7D evidence on APFS with OS egress denial
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7D_ACTIVATION: "1"
+          RLG_WP7D_MANDATORY: "1"
+          RLG_WP7D_OS_EGRESS_DENIED: "1"
+        run: sandbox-exec -p '(version 1) (allow default) (deny network*)' python -m pytest tests/test_wp7d_snapshot_activation.py tests/test_chroma_snapshot_private.py -q --basetemp "${RUNNER_TEMP}/rlg-wp7d-focused"
+
+      - name: Run complete suite on APFS with OS egress denial
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7D_ACTIVATION: "1"
+          RLG_WP7D_MANDATORY: "1"
+          RLG_WP7D_OS_EGRESS_DENIED: "1"
+        run: sandbox-exec -p '(version 1) (allow default) (deny network*)' python -m pytest -q --basetemp "${RUNNER_TEMP}/rlg-wp7d-complete"
+
+      - name: Run focused WP7D evidence on NTFS with OS egress denial
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7D_ACTIVATION: "1"
+          RLG_WP7D_MANDATORY: "1"
+          RLG_WP7D_OS_EGRESS_DENIED: "1"
+        run: python -m pytest tests/test_wp7d_snapshot_activation.py tests/test_chroma_snapshot_private.py -q --basetemp "$env:RUNNER_TEMP/rlg-wp7d-focused"
+
+      - name: Run complete suite on NTFS with OS egress denial
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7D_ACTIVATION: "1"
+          RLG_WP7D_MANDATORY: "1"
+          RLG_WP7D_OS_EGRESS_DENIED: "1"
+        run: python -m pytest -q --basetemp "$env:RUNNER_TEMP/rlg-wp7d-complete"
+
+      - name: Remove Windows outbound-denial rule
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ($env:RLG_WP7D_FIREWALL_RULE) {
+            Remove-NetFirewallRule -DisplayName $env:RLG_WP7D_FIREWALL_RULE
+          }
+
+      - name: Remove Linux outbound-denial rule
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo iptables -D OUTPUT -o lo -j ACCEPT || true
+          if [ -n "${RLG_WP7D_TEST_UID:-}" ]; then
+            sudo iptables -D OUTPUT -m owner --uid-owner "${RLG_WP7D_TEST_UID}" -j REJECT || true
+          fi
+
+      - name: Unmount and remove native ext4 volume
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo umount /mnt/rlg-wp7d-ext4 || true
+          sudo rmdir /mnt/rlg-wp7d-ext4 || true
+          rm -f "${RUNNER_TEMP}/rlg-wp7d-ext4.img"
+          if [ -n "${RLG_WP7D_TEST_USER:-}" ]; then
+            sudo userdel "${RLG_WP7D_TEST_USER}" || true
+          fi

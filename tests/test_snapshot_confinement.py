@@ -4,6 +4,7 @@ import json
 import inspect
 import os
 import plistlib
+import shutil
 import socket
 import stat
 import subprocess
@@ -720,6 +721,8 @@ foreach ($rule in $acl.Access) {
 """
     script_path = tmp_path / "inspect-dacl.ps1"
     script_path.write_text(script, encoding="utf-8")
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    assert powershell is not None
     for path in (
         lease._workspace,
         lease._snapshot,
@@ -728,7 +731,7 @@ foreach ($rule in $acl.Access) {
     ):
         result = subprocess.run(
             [
-                "pwsh",
+                powershell,
                 "-NoLogo",
                 "-NoProfile",
                 "-NonInteractive",
@@ -805,7 +808,7 @@ def test_recovery_boundary_recursively_scrubs_exception_chain(monkeypatch, tmp_p
     _assert_chain_excludes(caught.value, canary, "operator-exception-text-canary")
 
 
-def test_no_public_connector_cli_or_package_surface_uses_snapshot_primitives(tmp_path):
+def test_public_scan_uses_only_aggregate_snapshot_api_while_monitor_stays_disabled(tmp_path):
     import ragleakguard
 
     assert snap.__all__ == ()
@@ -816,12 +819,18 @@ def test_no_public_connector_cli_or_package_surface_uses_snapshot_primitives(tmp
     assert connectors.read_chroma.__module__ == "ragleakguard.connectors"
     with pytest.raises(connectors.ChromaConnectorUnavailableError):
         connectors.read_chroma(object())
-    for command in ("scan", "monitor"):
-        result = CliRunner().invoke(cli.app, [command, "--help"])
-        output = " ".join(unstyle(result.output).split()).lower()
-        assert result.exit_code == 0
-        assert "snapshot" not in output
-        assert "6 = direct chroma scanning disabled" in output
+    assert connectors.scan_chroma_snapshot.__module__ == "ragleakguard.connectors"
+    scan_help = CliRunner().invoke(cli.app, ["scan", "--help"])
+    scan_output = " ".join(unstyle(scan_help.output).split()).lower()
+    assert scan_help.exit_code == 0
+    assert "operator snapshot" in scan_output
+    assert "--snapshot" in scan_output
+    assert "--work-parent" in scan_output
+    monitor_help = CliRunner().invoke(cli.app, ["monitor", "--help"])
+    monitor_output = " ".join(unstyle(monitor_help.output).split()).lower()
+    assert monitor_help.exit_code == 0
+    assert "--snapshot" not in monitor_output
+    assert "6 = direct chroma scanning disabled" in monitor_output
 
 
 def test_private_module_exports_no_public_callable_or_class():
@@ -853,7 +862,7 @@ def test_wp7b_docs_preserve_activation_gate_bounds_and_nonclaims():
         "1 MiB",
         "1,800 seconds",
         "600 seconds",
-        "No source-scanning connector is currently available",
+        "aggregate-only operator-snapshot",
         "does not import or construct Chroma",
         "do not create or prove transactionally atomic multi-file snapshot isolation",
         "Cleanup is deletion, not certified erasure",
@@ -862,8 +871,8 @@ def test_wp7b_docs_preserve_activation_gate_bounds_and_nonclaims():
         "human authorization",
     ):
         assert exact in combined
-    assert "private WP7B lifecycle is not a connector" in architecture
-    assert "Snapshot-backed Chroma scanning remains unavailable" in contributing
+    assert "WP7D uses them internally" in architecture
+    assert "Direct/live Chroma entry points remain disabled" in contributing
 
 
 def test_ci_requires_current_native_ext4_apfs_ntfs_matrix_without_chroma_extra():

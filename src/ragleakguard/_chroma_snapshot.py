@@ -36,6 +36,14 @@ from . import _snapshot
 __all__ = ()
 
 _CANDIDATES = frozenset({"1.5.0", "1.5.9"})
+_PUBLIC_ACTIVATION_VERSION = "1.5.9"
+_PUBLIC_ACTIVATION_ENVIRONMENTS = {
+    ("Linux", (3, 10)),
+    ("Linux", (3, 11)),
+    ("Linux", (3, 12)),
+    ("Darwin", (3, 12)),
+    ("Windows", (3, 12)),
+}
 _GLOBAL_SECONDS = 1_200.0
 _USEFUL_SECONDS = 1_170.0
 _GRACEFUL_SECONDS = 10.0
@@ -46,6 +54,7 @@ _WAIT_QUANTUM_SECONDS = 0.1
 _MAX_WAIT_POLLS = 12_000
 _MAX_IPC_PAYLOAD = 262_144
 _MAX_RECEIPT_PAYLOAD = 512
+_MAX_DETECTOR_RESPONSE_PAYLOAD = 16_384
 _MAX_ERROR_PAYLOAD = 256
 _MAX_EFFECT_PATHS = 4_096
 _AUTOMATIC_RETRIES = 0
@@ -60,6 +69,7 @@ _UUID_RE = re.compile(
 )
 _MD5_RE = re.compile(r"^[0-9a-f]{32}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_ENTITY_TYPE_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 _MIGRATION_DIRS = ("embeddings_queue", "metadb", "sysdb")
 _TELEMETRY_CLASS = "ragleakguard._chroma_snapshot._LocalTelemetry"
 _COLLECTION_DOMAIN = b"RLG/WP7C/chroma/collection/v1"
@@ -192,6 +202,47 @@ class _ChromaScanLimits:
 
 
 _DEFAULT_CHROMA_SCAN_LIMITS = _ChromaScanLimits()
+
+# WP7D narrows the reviewed WP7C ceilings.  It never widens the private
+# candidate path, so the ten-cell WP7C evidence remains independently usable.
+_PUBLIC_CHROMA_SCAN_LIMITS = _ChromaScanLimits(
+    collections=1_000,
+    records=10_000,
+    source_segments=100_000,
+    source_utf8_bytes=268_435_456,
+    document_bytes=65_536,
+    manifest_entries=11_000,
+)
+
+
+@dataclass(frozen=True)
+class _DetectorLimits:
+    records: int = 10_000
+    source_segments: int = 100_000
+    source_utf8_bytes: int = 268_435_456
+    segment_bytes: int = 65_536
+    findings_per_segment: int = 4_096
+    total_findings: int = 1_000_000
+    entity_types: int = 64
+
+    def __post_init__(self) -> None:
+        maxima = (
+            (self.records, 10_000),
+            (self.source_segments, 100_000),
+            (self.source_utf8_bytes, 268_435_456),
+            (self.segment_bytes, 65_536),
+            (self.findings_per_segment, 4_096),
+            (self.total_findings, 1_000_000),
+            (self.entity_types, 64),
+        )
+        if any(
+            type(value) is not int or value <= 0 or value > maximum
+            for value, maximum in maxima
+        ):
+            raise _ChromaScanError()
+
+
+_DEFAULT_DETECTOR_LIMITS = _DetectorLimits()
 
 
 class _ChromaCompletionReceipt:
@@ -382,6 +433,29 @@ def _candidate_version() -> str:
     ):
         raise _ChromaScanError()
     return raw
+
+
+def _public_activation_gate() -> str:
+    """Reject every non-WP7D dependency or host tuple before source access."""
+    version = _candidate_version()
+    system = platform.system()
+    python = (sys.version_info.major, sys.version_info.minor)
+    machine = platform.machine().lower()
+    if version != _PUBLIC_ACTIVATION_VERSION:
+        raise _ChromaScanError()
+    if (system, python) not in _PUBLIC_ACTIVATION_ENVIRONMENTS:
+        raise _ChromaScanError()
+    if system in {"Linux", "Windows"} and machine not in {"x86_64", "amd64"}:
+        raise _ChromaScanError()
+    if system == "Darwin":
+        if machine not in {"arm64", "aarch64", "x86_64"}:
+            raise _ChromaScanError()
+        try:
+            if int(platform.mac_ver()[0].split(".", 1)[0]) != 15:
+                raise _ChromaScanError()
+        except (ValueError, IndexError):
+            raise _ChromaScanError() from None
+    return version
 
 
 def _filesystem_type(path: Path) -> str:
@@ -1371,6 +1445,30 @@ def _borrow_request(
     }
 
 
+def _detection_request(
+    version: str,
+    algorithm: str,
+    limits: _ChromaScanLimits,
+    detector_limits: _DetectorLimits,
+    locale: Optional[str],
+    useful_seconds: float,
+) -> dict:
+    if locale is not None and type(locale) is not str:
+        raise _ChromaScanError()
+    return {
+        "algorithm": algorithm,
+        "detector_limits": {
+            name: getattr(detector_limits, name)
+            for name in detector_limits.__dataclass_fields__
+        },
+        "limits": {name: getattr(limits, name) for name in limits.__dataclass_fields__},
+        "locale": locale,
+        "mode": "detect",
+        "useful_seconds": useful_seconds,
+        "version": version,
+    }
+
+
 def _json_object(pairs: Iterable[tuple]) -> dict:
     result = {}
     for key, value in pairs:
@@ -1443,6 +1541,157 @@ def _canonical_scalar(value: object, limits: _ChromaScanLimits) -> Tuple[bytes, 
     raise _ChromaScanError()
 
 
+class _DetectorAccumulator:
+    """Validate findings in-worker and retain privacy-minimal counters only."""
+
+    __slots__ = (
+        "_allowed_types",
+        "_by_type",
+        "_current_findings",
+        "_detect",
+        "_in_record",
+        "_limits",
+        "_locale",
+        "_records",
+        "_records_with_findings",
+        "_segments",
+        "_source_bytes",
+        "_total_findings",
+    )
+
+    def __init__(
+        self,
+        locale: Optional[str],
+        limits: _DetectorLimits,
+        detect_function,
+        allowed_types: frozenset,
+    ) -> None:
+        if (
+            locale is not None and type(locale) is not str
+        ) or type(limits) is not _DetectorLimits or type(allowed_types) is not frozenset:
+            raise _ChromaScanError()
+        if (
+            not allowed_types
+            or len(allowed_types) > limits.entity_types
+            or any(
+                type(value) is not str or _ENTITY_TYPE_RE.fullmatch(value) is None
+                for value in allowed_types
+            )
+        ):
+            raise _ChromaScanError()
+        self._locale = locale
+        self._limits = limits
+        self._detect = detect_function
+        self._allowed_types = allowed_types
+        self._records = 0
+        self._records_with_findings = 0
+        self._segments = 0
+        self._source_bytes = 0
+        self._total_findings = 0
+        self._by_type: Dict[str, int] = {}
+        self._in_record = False
+        self._current_findings = 0
+
+    def start_record(self) -> None:
+        if self._in_record or self._records >= self._limits.records:
+            raise _ChromaScanError()
+        self._in_record = True
+        self._current_findings = 0
+
+    def consume(self, text: object, utf8_bytes: object) -> None:
+        if not self._in_record or type(utf8_bytes) is not int or utf8_bytes < 0:
+            raise _ChromaScanError()
+        observed_bytes = _utf8_length(text, self._limits.segment_bytes)
+        if observed_bytes != utf8_bytes:
+            raise _ChromaScanError()
+        next_segments = self._segments + 1
+        next_bytes = self._source_bytes + utf8_bytes
+        if (
+            next_segments > self._limits.source_segments
+            or next_bytes > self._limits.source_utf8_bytes
+        ):
+            raise _ChromaScanError()
+        try:
+            findings = self._detect(text, locale=self._locale)
+        except BaseException:
+            raise _ChromaScanError() from None
+        if type(findings) is not list or len(findings) > self._limits.findings_per_segment:
+            raise _ChromaScanError()
+        counts: Dict[str, int] = {}
+        for finding in findings:
+            if type(finding) is not dict or set(finding) != {
+                "type",
+                "start",
+                "end",
+                "score",
+                "text",
+            }:
+                raise _ChromaScanError()
+            entity_type = finding.get("type")
+            start = finding.get("start")
+            end = finding.get("end")
+            score = finding.get("score")
+            detected_text = finding.get("text")
+            if (
+                type(entity_type) is not str
+                or entity_type not in self._allowed_types
+                or _ENTITY_TYPE_RE.fullmatch(entity_type) is None
+                or type(start) is not int
+                or type(end) is not int
+                or start < 0
+                or end <= start
+                or end > len(text)
+                or isinstance(score, bool)
+                or not isinstance(score, (int, float))
+                or not math.isfinite(score)
+                or score < 0
+                or score > 1
+                or type(detected_text) is not str
+                or detected_text != text[start:end]
+            ):
+                raise _ChromaScanError()
+            counts[entity_type] = counts.get(entity_type, 0) + 1
+
+        next_total = self._total_findings + len(findings)
+        if next_total > self._limits.total_findings:
+            raise _ChromaScanError()
+        for entity_type, count in counts.items():
+            self._by_type[entity_type] = self._by_type.get(entity_type, 0) + count
+        if len(self._by_type) > self._limits.entity_types:
+            raise _ChromaScanError()
+        self._segments = next_segments
+        self._source_bytes = next_bytes
+        self._total_findings = next_total
+        self._current_findings += len(findings)
+
+    def finish_record(self) -> None:
+        if not self._in_record:
+            raise _ChromaScanError()
+        self._records += 1
+        if self._current_findings:
+            self._records_with_findings += 1
+        self._current_findings = 0
+        self._in_record = False
+
+    def result(self) -> dict:
+        if self._in_record or sum(self._by_type.values()) != self._total_findings:
+            raise _ChromaScanError()
+        if (
+            self._records_with_findings > self._records
+            or self._records_with_findings > self._total_findings
+            or (self._total_findings == 0) != (not self._by_type)
+        ):
+            raise _ChromaScanError()
+        return {
+            "finding_counts_by_type": dict(sorted(self._by_type.items())),
+            "records_completed": self._records,
+            "records_with_findings": self._records_with_findings,
+            "source_segments_completed": self._segments,
+            "source_utf8_bytes_completed": self._source_bytes,
+            "total_findings": self._total_findings,
+        }
+
+
 def _canonical_content(
     key: bytes,
     document: object,
@@ -1451,6 +1700,7 @@ def _canonical_content(
     deadline: Optional[float] = None,
     clock: Callable[[], float] = time.monotonic,
     cancelled: Optional[Callable[[], bool]] = None,
+    segment_consumer=None,
 ) -> Tuple[bytes, bytes, int, int]:
     def check_control() -> None:
         if deadline is not None:
@@ -1464,6 +1714,8 @@ def _canonical_content(
         frames.append((b"document-none", b""))
     else:
         encoded_document = _encoded(document, limits.document_bytes)
+        if segment_consumer is not None:
+            segment_consumer(document, len(encoded_document))
         frames.append((b"document", encoded_document))
         segments += 1
         source_bytes += len(encoded_document)
@@ -1481,9 +1733,11 @@ def _canonical_content(
         ordered.sort(key=lambda item: item[0])
         metadata_bytes = 0
         leaves = 0
-        for key_encoded, _, value in ordered:
+        for key_encoded, metadata_key, value in ordered:
             check_control()
             frames.append((b"metadata-key", key_encoded))
+            if segment_consumer is not None:
+                segment_consumer(metadata_key, len(key_encoded))
             segments += 1
             source_bytes += len(key_encoded)
             metadata_bytes += len(key_encoded)
@@ -1501,6 +1755,8 @@ def _canonical_content(
                 for item in value:
                     check_control()
                     tag, encoded = _canonical_scalar(item, limits)
+                    if segment_consumer is not None:
+                        segment_consumer(encoded.decode("utf-8"), len(encoded))
                     leaves += 1
                     segments += 1
                     source_bytes += len(encoded)
@@ -1511,6 +1767,8 @@ def _canonical_content(
                     check_control()
             else:
                 tag, encoded = _canonical_scalar(value, limits)
+                if segment_consumer is not None:
+                    segment_consumer(encoded.decode("utf-8"), len(encoded))
                 leaves += 1
                 segments += 1
                 source_bytes += len(encoded)
@@ -1582,7 +1840,13 @@ def _record_page(result: object, expected: int) -> Tuple[list, list, list]:
     return ids, documents, metadatas
 
 
-def _enumeration_pass(client, key: bytes, limits: _ChromaScanLimits, deadline: float):
+def _enumeration_pass(
+    client,
+    key: bytes,
+    limits: _ChromaScanLimits,
+    deadline: float,
+    detector: Optional[_DetectorAccumulator] = None,
+):
     collection_count = _call(client.count_collections, deadline, None)
     collection_count = _exact_int(collection_count, limits.collections)
     collection_manifest = []
@@ -1662,9 +1926,18 @@ def _enumeration_pass(client, key: bytes, limits: _ChromaScanLimits, deadline: f
                     )
                     record_token = _token(key, _RECORD_DOMAIN, record_frames)
                     record_witness = _witness(key, _RECORD_DOMAIN, record_frames)
+                    if detector is not None:
+                        detector.start_record()
                     content, content_witness, segments, source_bytes = _canonical_content(
-                        key, document, metadata, limits, deadline
+                        key,
+                        document,
+                        metadata,
+                        limits,
+                        deadline,
+                        segment_consumer=(detector.consume if detector is not None else None),
                     )
+                    if detector is not None:
+                        detector.finish_record()
                     records.append(
                         record_token + record_witness + content + content_witness
                     )
@@ -1951,6 +2224,15 @@ class _DeniedSocket(socket.socket):
         _deny_attempt()
 
 
+class _UnavailableIPv6Probe:
+    """Fail urllib3's import-time local IPv6 bind probe without a real socket."""
+
+    def __new__(cls, *args, **kwargs):
+        if args == (socket.AF_INET6,) and not kwargs:
+            raise OSError
+        _deny_attempt()
+
+
 class _DeniedPopen(subprocess.Popen):
     def __new__(cls, *args, **kwargs):
         _deny_attempt()
@@ -2057,16 +2339,26 @@ def _audit_settings(settings, expected: Mapping[str, object]) -> None:
 
 
 def _worker_scan(request: dict) -> dict:
-    if type(request) is not dict or set(request) != {
+    private_keys = {
         "algorithm",
         "limits",
         "useful_seconds",
         "version",
-    }:
+    }
+    detection_keys = private_keys | {"detector_limits", "locale", "mode"}
+    if type(request) is not dict:
+        raise _ChromaScanError()
+    request_keys = frozenset(request)
+    if request_keys not in {frozenset(private_keys), frozenset(detection_keys)}:
+        raise _ChromaScanError()
+    detection_mode = request_keys == frozenset(detection_keys)
+    if detection_mode and request.get("mode") != "detect":
         raise _ChromaScanError()
     version = request.get("version")
     algorithm = request.get("algorithm")
     if version not in _CANDIDATES or algorithm not in {"md5", "sha256"}:
+        raise _ChromaScanError()
+    if detection_mode and version != _PUBLIC_ACTIVATION_VERSION:
         raise _ChromaScanError()
     useful_seconds = request.get("useful_seconds")
     if (
@@ -2081,9 +2373,20 @@ def _worker_scan(request: dict) -> dict:
         raise _ChromaScanError()
     try:
         limits = _ChromaScanLimits(**request["limits"])
+        detector_limits = (
+            _DetectorLimits(**request["detector_limits"])
+            if detection_mode and type(request.get("detector_limits")) is dict
+            else None
+        )
         key = secrets.token_bytes(limits.token_bytes)
     except (TypeError, ValueError, OSError):
         raise _ChromaScanError() from None
+    if detection_mode and (
+        limits != _PUBLIC_CHROMA_SCAN_LIMITS
+        or detector_limits != _DEFAULT_DETECTOR_LIMITS
+        or (request.get("locale") is not None and type(request.get("locale")) is not str)
+    ):
+        raise _ChromaScanError()
     if type(key) is not bytes or len(key) != limits.token_bytes:
         raise _ChromaScanError()
     deadline = time.monotonic() + float(useful_seconds)
@@ -2096,6 +2399,46 @@ def _worker_scan(request: dict) -> dict:
     if before.algorithm != algorithm:
         raise _ChromaScanError()
     _sanitize_worker()
+    detector = None
+    if detection_mode:
+        denied_socket = socket.socket
+        try:
+            socket.socket = _UnavailableIPv6Probe
+            import tldextract
+
+            offline_tldextract = tldextract.TLDExtract(
+                cache_dir=None,
+                suffix_list_urls=(),
+            )
+        except BaseException:
+            raise _ChromaScanError() from None
+        finally:
+            socket.socket = denied_socket
+        try:
+            tldextract.extract = offline_tldextract
+            from ragleakguard.detect import (
+                DEFAULT_ENTITIES,
+                LOCALE_PACKS,
+                detect,
+                validate_detection_runtime,
+            )
+
+            locale = validate_detection_runtime(request.get("locale"))
+            if locale != request.get("locale"):
+                raise _ChromaScanError()
+            allowed_types = set(DEFAULT_ENTITIES)
+            if locale is not None:
+                allowed_types.update(LOCALE_PACKS[locale])
+            detector = _DetectorAccumulator(
+                locale,
+                detector_limits,
+                detect,
+                frozenset(allowed_types),
+            )
+        except _ChromaScanError:
+            raise
+        except BaseException:
+            raise _ChromaScanError() from None
     try:
         import chromadb
         from chromadb.config import DEFAULT_DATABASE, DEFAULT_TENANT, Settings
@@ -2166,7 +2509,9 @@ def _worker_scan(request: dict) -> dict:
     if not before.same_as(constructed):
         raise _ChromaScanError()
     _worker_capability()
-    first_manifest, first_counts = _enumeration_pass(client, key, limits, deadline)
+    first_manifest, first_counts = _enumeration_pass(
+        client, key, limits, deadline, detector
+    )
     _worker_capability()
     second_manifest, second_counts = _enumeration_pass(client, key, limits, deadline)
     if first_manifest != second_manifest or first_counts != second_counts:
@@ -2178,13 +2523,23 @@ def _worker_scan(request: dict) -> dict:
     if not before.same_as(final) or _ATTEMPTED_EGRESS_OR_PROCESS:
         raise _ChromaScanError()
     _check_control(deadline, time.monotonic, None)
-    return {
+    response = {
         "collections": first_counts[0],
         "ok": True,
         "records": first_counts[1],
         "segments": first_counts[2],
         "utf8_bytes": first_counts[3],
     }
+    if detector is not None:
+        detector_result = detector.result()
+        if (
+            detector_result["records_completed"] != first_counts[1]
+            or detector_result["source_segments_completed"] != first_counts[2]
+            or detector_result["source_utf8_bytes_completed"] != first_counts[3]
+        ):
+            raise _ChromaScanError()
+        response["detector"] = detector_result
+    return response
 
 
 def _read_worker_request(handle) -> dict:
@@ -2210,7 +2565,12 @@ def _worker_main() -> None:
     try:
         request = _read_worker_request(sys.stdin.buffer)
         document = _worker_scan(request)
-        encoded = _encode_frame(document, _MAX_RECEIPT_PAYLOAD)
+        maximum = (
+            _MAX_DETECTOR_RESPONSE_PAYLOAD
+            if "detector" in document
+            else _MAX_RECEIPT_PAYLOAD
+        )
+        encoded = _encode_frame(document, maximum)
         exit_code = 0
     except BaseException:
         encoded = _encode_frame({"code": _ERROR_CODE, "ok": False}, _MAX_ERROR_PAYLOAD)
@@ -2370,14 +2730,15 @@ def _terminate_process(
     return _wait_process(process, kill_end, deadline, clock, None, cancellation_fails=False)
 
 
-def _run_worker(
+def _run_worker_document(
     request: dict,
     data: Path,
     deadline: float,
     useful_cutoff: float,
     clock: Callable[[], float],
     cancelled: Optional[Callable[[], bool]],
-) -> Tuple[int, int, int, int]:
+    response_maximum: int,
+) -> dict:
     frame = _encode_frame(request, _MAX_IPC_PAYLOAD)
     creationflags = int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) if os.name == "nt" else 0
     try:
@@ -2400,7 +2761,7 @@ def _run_worker(
         except BaseException:
             pass
         raise _ChromaScanError()
-    stdout_capture = _PipeCapture(process.stdout, _FRAME_PREFIX_BYTES + _MAX_RECEIPT_PAYLOAD)
+    stdout_capture = _PipeCapture(process.stdout, _FRAME_PREFIX_BYTES + response_maximum)
     stderr_capture = _PipeCapture(process.stderr, _MAX_CHILD_STDERR)
     writer = _PipeWriter(process.stdin, frame)
     threads = [
@@ -2437,12 +2798,31 @@ def _run_worker(
         or stdout_capture.failed
         or stderr_capture.failed
         or stderr_capture.total != 0
-        or stdout_capture.total > _FRAME_PREFIX_BYTES + _MAX_RECEIPT_PAYLOAD
+        or stdout_capture.total > _FRAME_PREFIX_BYTES + response_maximum
         or process.returncode != 0
         or not completed_in_time
     ):
         raise _ChromaScanError()
-    response = _decode_frame(bytes(stdout_capture.data), _MAX_RECEIPT_PAYLOAD)
+    return _decode_frame(bytes(stdout_capture.data), response_maximum)
+
+
+def _run_worker(
+    request: dict,
+    data: Path,
+    deadline: float,
+    useful_cutoff: float,
+    clock: Callable[[], float],
+    cancelled: Optional[Callable[[], bool]],
+) -> Tuple[int, int, int, int]:
+    response = _run_worker_document(
+        request,
+        data,
+        deadline,
+        useful_cutoff,
+        clock,
+        cancelled,
+        _MAX_RECEIPT_PAYLOAD,
+    )
     if set(response) != {"collections", "ok", "records", "segments", "utf8_bytes"} or response["ok"] is not True:
         raise _ChromaScanError()
     limits = request["limits"]
@@ -2452,6 +2832,130 @@ def _run_worker(
         _exact_int(response["segments"], limits["source_segments"]),
         _exact_int(response["utf8_bytes"], limits["source_utf8_bytes"]),
     )
+
+
+def _validate_detector_response(response: dict, request: dict):
+    if set(response) != {
+        "collections",
+        "detector",
+        "ok",
+        "records",
+        "segments",
+        "utf8_bytes",
+    } or response.get("ok") is not True:
+        raise _ChromaScanError()
+    limits = request.get("limits")
+    detector_limits = request.get("detector_limits")
+    if type(limits) is not dict or type(detector_limits) is not dict:
+        raise _ChromaScanError()
+    counts = (
+        _exact_int(response.get("collections"), limits["collections"]),
+        _exact_int(response.get("records"), limits["records"]),
+        _exact_int(response.get("segments"), limits["source_segments"]),
+        _exact_int(response.get("utf8_bytes"), limits["source_utf8_bytes"]),
+    )
+    detector = response.get("detector")
+    if type(detector) is not dict or set(detector) != {
+        "finding_counts_by_type",
+        "records_completed",
+        "records_with_findings",
+        "source_segments_completed",
+        "source_utf8_bytes_completed",
+        "total_findings",
+    }:
+        raise _ChromaScanError()
+    detector_records = _exact_int(
+        detector.get("records_completed"), detector_limits["records"]
+    )
+    detector_segments = _exact_int(
+        detector.get("source_segments_completed"),
+        detector_limits["source_segments"],
+    )
+    detector_bytes = _exact_int(
+        detector.get("source_utf8_bytes_completed"),
+        detector_limits["source_utf8_bytes"],
+    )
+    flagged = _exact_int(
+        detector.get("records_with_findings"), detector_limits["records"]
+    )
+    total = _exact_int(
+        detector.get("total_findings"), detector_limits["total_findings"]
+    )
+    by_type = detector.get("finding_counts_by_type")
+    if type(by_type) is not dict or len(by_type) > detector_limits["entity_types"]:
+        raise _ChromaScanError()
+    try:
+        from ragleakguard.detect import DEFAULT_ENTITIES, LOCALE_PACKS
+
+        allowed_types = set(DEFAULT_ENTITIES)
+        locale = request.get("locale")
+        if locale is not None:
+            allowed_types.update(LOCALE_PACKS[locale])
+    except BaseException:
+        raise _ChromaScanError() from None
+    if (
+        not allowed_types
+        or len(allowed_types) > detector_limits["entity_types"]
+        or any(
+            type(entity_type) is not str
+            or _ENTITY_TYPE_RE.fullmatch(entity_type) is None
+            for entity_type in allowed_types
+        )
+    ):
+        raise _ChromaScanError()
+    validated: Dict[str, int] = {}
+    for entity_type, count in by_type.items():
+        if (
+            type(entity_type) is not str
+            or entity_type not in allowed_types
+            or _ENTITY_TYPE_RE.fullmatch(entity_type) is None
+            or type(count) is not int
+            or count <= 0
+            or count > detector_limits["total_findings"]
+        ):
+            raise _ChromaScanError()
+        validated[entity_type] = count
+    if (
+        counts[1:] != (detector_records, detector_segments, detector_bytes)
+        or (counts[0] == 0 and counts[1] != 0)
+        or flagged > detector_records
+        or flagged > total
+        or (total > 0 and flagged == 0)
+        or (detector_records == 0 and (detector_segments != 0 or detector_bytes != 0))
+        or detector_bytes > detector_segments * detector_limits["segment_bytes"]
+        or total > detector_segments * detector_limits["findings_per_segment"]
+        or sum(validated.values()) != total
+        or (total == 0) != (not validated)
+    ):
+        raise _ChromaScanError()
+    return counts, {
+        "finding_counts_by_type": dict(sorted(validated.items())),
+        "records_completed": detector_records,
+        "records_with_findings": flagged,
+        "source_segments_completed": detector_segments,
+        "source_utf8_bytes_completed": detector_bytes,
+        "total_findings": total,
+    }
+
+
+def _run_detection_worker(
+    request: dict,
+    data: Path,
+    deadline: float,
+    useful_cutoff: float,
+    clock: Callable[[], float],
+    cancelled: Optional[Callable[[], bool]],
+):
+    response = _run_worker_document(
+        request,
+        data,
+        deadline,
+        useful_cutoff,
+        clock,
+        cancelled,
+        _MAX_DETECTOR_RESPONSE_PAYLOAD,
+    )
+    return _validate_detector_response(response, request)
 
 
 def _same_borrow(left: _snapshot._BorrowedSnapshot, right: _snapshot._BorrowedSnapshot) -> bool:
@@ -2589,6 +3093,117 @@ def _scan_prepared_chroma(
             raise _ChromaScanError()
         _check_control(deadline, clock, cancelled)
         return _ChromaCompletionReceipt(*counts)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except _ChromaScanError as error:
+        failure = error
+    except BaseException:
+        failure = _ChromaScanError()
+    raise _scrub(failure)
+
+
+def _scan_prepared_chroma_with_detection(
+    prepared: _snapshot._PreparedSnapshot,
+    *,
+    locale: Optional[str],
+    limits: _ChromaScanLimits = _PUBLIC_CHROMA_SCAN_LIMITS,
+    detector_limits: _DetectorLimits = _DEFAULT_DETECTOR_LIMITS,
+    cancelled: Optional[Callable[[], bool]] = None,
+    clock: Callable[[], float] = time.monotonic,
+):
+    """Return aggregate-only WP7D evidence after every WP7C gate succeeds."""
+    failure = None
+    try:
+        borrow = _snapshot._borrow_prepared_snapshot(prepared)
+        if (
+            type(limits) is not _ChromaScanLimits
+            or limits != _PUBLIC_CHROMA_SCAN_LIMITS
+            or type(detector_limits) is not _DetectorLimits
+            or detector_limits != _DEFAULT_DETECTOR_LIMITS
+            or (locale is not None and type(locale) is not str)
+        ):
+            raise _ChromaScanError()
+        start = _safe_clock(clock)
+        deadline = start + _GLOBAL_SECONDS
+        useful_cutoff = start + _USEFUL_SECONDS
+        if not math.isfinite(deadline) or not math.isfinite(useful_cutoff):
+            raise _ChromaScanError()
+        _check_control(deadline, clock, cancelled)
+        version = _candidate_version()
+        if version != _PUBLIC_ACTIVATION_VERSION:
+            raise _ChromaScanError()
+        environment = _environment_gate(version, borrow.data)
+        evidence_key = _token(
+            borrow.key,
+            b"RLG/WP7D/parent/store-evidence-key/v1",
+            (
+                (b"workspace", borrow.workspace_id.encode("ascii")),
+                (b"snapshot", borrow.snapshot_id.encode("ascii")),
+                (b"lease", borrow.lease_id.encode("ascii")),
+            ),
+        )
+        before_inventory = _inventory_files(borrow.data, deadline, clock, cancelled)
+        if not hmac.compare_digest(
+            _inventory_evidence(borrow.key, before_inventory), borrow.data_evidence
+        ):
+            raise _ChromaScanError()
+        before_store = _store_preflight(
+            borrow.data, version, evidence_key, limits, deadline, clock, cancelled
+        )
+        renewed = _snapshot._borrow_prepared_snapshot(prepared)
+        if not _same_borrow(borrow, renewed):
+            raise _ChromaScanError()
+        remaining_useful = min(_USEFUL_SECONDS, useful_cutoff - _safe_clock(clock))
+        if remaining_useful <= 0:
+            raise _ChromaScanError()
+        request = _detection_request(
+            version,
+            before_store.algorithm,
+            limits,
+            detector_limits,
+            locale,
+            remaining_useful,
+        )
+        counts, detector = _run_detection_worker(
+            request, renewed.data, deadline, useful_cutoff, clock, cancelled
+        )
+        renewed = _snapshot._borrow_prepared_snapshot(prepared)
+        if not _same_borrow(borrow, renewed):
+            raise _ChromaScanError()
+        after_store = _store_preflight(
+            borrow.data, version, evidence_key, limits, deadline, clock, cancelled
+        )
+        after_inventory = _inventory_files(borrow.data, deadline, clock, cancelled)
+        if not before_store.same_as(after_store):
+            raise _ChromaScanError()
+        _classify_effects(
+            before_inventory,
+            after_inventory,
+            version,
+            environment,
+            before_store.vector_ids,
+        )
+        final_borrow = _snapshot._borrow_prepared_snapshot(prepared)
+        if not _same_borrow(borrow, final_borrow):
+            raise _ChromaScanError()
+        final_store = _store_preflight(
+            borrow.data, version, evidence_key, limits, deadline, clock, cancelled
+        )
+        final_inventory = _inventory_files(borrow.data, deadline, clock, cancelled)
+        if not before_store.same_as(final_store):
+            raise _ChromaScanError()
+        _classify_effects(
+            before_inventory,
+            final_inventory,
+            version,
+            environment,
+            before_store.vector_ids,
+        )
+        receipt_borrow = _snapshot._borrow_prepared_snapshot(prepared)
+        if not _same_borrow(borrow, receipt_borrow):
+            raise _ChromaScanError()
+        _check_control(deadline, clock, cancelled)
+        return _ChromaCompletionReceipt(*counts), detector
     except (KeyboardInterrupt, SystemExit):
         raise
     except _ChromaScanError as error:
