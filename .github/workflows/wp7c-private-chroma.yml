@@ -78,11 +78,18 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
+          sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin rlgwp7c
+          test_user=rlgwp7c
+          test_uid="$(id -u "${test_user}")"
+          test "${test_uid}" != "$(id -u)"
+          echo "RLG_WP7C_TEST_USER=${test_user}" >> "${GITHUB_ENV}"
+          echo "RLG_WP7C_TEST_UID=${test_uid}" >> "${GITHUB_ENV}"
           truncate -s 2G "${RUNNER_TEMP}/rlg-wp7c-ext4.img"
           mkfs.ext4 -q -F "${RUNNER_TEMP}/rlg-wp7c-ext4.img"
           sudo mkdir -p /mnt/rlg-wp7c-ext4
           sudo mount -o loop "${RUNNER_TEMP}/rlg-wp7c-ext4.img" /mnt/rlg-wp7c-ext4
-          sudo chown "$(id -u):$(id -g)" /mnt/rlg-wp7c-ext4
+          sudo mkdir /mnt/rlg-wp7c-ext4/home
+          sudo chown -R "${test_user}:${test_user}" /mnt/rlg-wp7c-ext4
           test "$(findmnt -n -o FSTYPE /mnt/rlg-wp7c-ext4)" = ext4
 
       - name: Assert native APFS
@@ -106,10 +113,11 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          sudo iptables -I OUTPUT 1 -m owner --uid-owner "$(id -u)" -j REJECT
+          test -n "${RLG_WP7C_TEST_UID}"
+          sudo iptables -I OUTPUT 1 -m owner --uid-owner "${RLG_WP7C_TEST_UID}" -j REJECT
           sudo iptables -I OUTPUT 1 -o lo -j ACCEPT
           sudo iptables -C OUTPUT -o lo -j ACCEPT
-          sudo iptables -C OUTPUT -m owner --uid-owner "$(id -u)" -j REJECT
+          sudo iptables -C OUTPUT -m owner --uid-owner "${RLG_WP7C_TEST_UID}" -j REJECT
 
       - name: Deny outbound traffic for the Python worker
         if: runner.os == 'Windows'
@@ -135,7 +143,11 @@ jobs:
           RLG_WP7C_COMPATIBILITY: "1"
           RLG_WP7C_OS_EGRESS_DENIED: "1"
           TMPDIR: /mnt/rlg-wp7c-ext4
-        run: python -m pytest tests/test_chroma_snapshot_private.py -q --basetemp /mnt/rlg-wp7c-ext4/focused
+        run: |
+          python_path="$(command -v python)"
+          sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7C_OS_EGRESS_DENIED,TMPDIR \
+            -u "${RLG_WP7C_TEST_USER}" env HOME=/mnt/rlg-wp7c-ext4/home \
+            "${python_path}" -m pytest tests/test_chroma_snapshot_private.py -q --basetemp /mnt/rlg-wp7c-ext4/focused
 
       - name: Run complete suite on native ext4 with OS egress denial
         if: runner.os == 'Linux'
@@ -147,7 +159,11 @@ jobs:
           RLG_WP7C_COMPATIBILITY: "1"
           RLG_WP7C_OS_EGRESS_DENIED: "1"
           TMPDIR: /mnt/rlg-wp7c-ext4
-        run: python -m pytest -q --basetemp /mnt/rlg-wp7c-ext4/complete
+        run: |
+          python_path="$(command -v python)"
+          sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7C_OS_EGRESS_DENIED,TMPDIR \
+            -u "${RLG_WP7C_TEST_USER}" env HOME=/mnt/rlg-wp7c-ext4/home \
+            "${python_path}" -m pytest -q --basetemp /mnt/rlg-wp7c-ext4/complete
 
       - name: Run focused private evidence on APFS with OS egress denial
         if: runner.os == 'macOS'
@@ -206,7 +222,9 @@ jobs:
         shell: bash
         run: |
           sudo iptables -D OUTPUT -o lo -j ACCEPT || true
-          sudo iptables -D OUTPUT -m owner --uid-owner "$(id -u)" -j REJECT || true
+          if [ -n "${RLG_WP7C_TEST_UID:-}" ]; then
+            sudo iptables -D OUTPUT -m owner --uid-owner "${RLG_WP7C_TEST_UID}" -j REJECT || true
+          fi
 
       - name: Unmount and remove native ext4 volume
         if: always() && runner.os == 'Linux'
@@ -215,3 +233,6 @@ jobs:
           sudo umount /mnt/rlg-wp7c-ext4 || true
           sudo rmdir /mnt/rlg-wp7c-ext4 || true
           rm -f "${RUNNER_TEMP}/rlg-wp7c-ext4.img"
+          if [ -n "${RLG_WP7C_TEST_USER:-}" ]; then
+            sudo userdel "${RLG_WP7C_TEST_USER}" || true
+          fi
