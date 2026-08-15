@@ -71,7 +71,7 @@ jobs:
           python -m pip install ".[detect,dev]" "chromadb==${{ matrix.chroma }}"
           python -m spacy download en_core_web_sm
           python -m pip check
-          python -m pip freeze --all
+          python -m pip list --format=freeze --disable-pip-version-check
           python -c "import importlib.metadata,sys; assert sys.version_info[:2] == tuple(map(int, '${{ matrix.python }}'.split('.'))); assert importlib.metadata.version('chromadb') == '${{ matrix.chroma }}'"
 
       - name: Prepare explicitly mounted native ext4 volume
@@ -90,7 +90,9 @@ jobs:
         shell: bash
         run: |
           test "$(sw_vers -productVersion | cut -d. -f1)" = 15
-          diskutil info "${RUNNER_TEMP}" | grep -Eiq 'File System Personality:.*APFS'
+          device="$(df "${RUNNER_TEMP}" | awk 'END {print $1}')"
+          test -n "${device}"
+          diskutil info "${device}" | grep -Eiq 'File System Personality:.*APFS'
 
       - name: Assert native NTFS
         if: runner.os == 'Windows'

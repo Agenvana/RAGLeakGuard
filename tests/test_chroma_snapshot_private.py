@@ -1049,7 +1049,8 @@ def test_private_workflow_has_exact_cells_native_gates_and_no_artifact_upload():
         "fail-fast: false",
         "chromadb==${{ matrix.chroma }}",
         "pip check",
-        "pip freeze --all",
+        "pip list --format=freeze --disable-pip-version-check",
+        'df "${RUNNER_TEMP}"',
         "findmnt -n -o FSTYPE",
         "diskutil info",
         "Get-Volume",
@@ -1064,6 +1065,7 @@ def test_private_workflow_has_exact_cells_native_gates_and_no_artifact_upload():
     assert "upload-artifact" not in workflow
     assert ".[chroma" not in workflow.lower()
     assert "pip install -e" not in workflow
+    assert "pip freeze" not in workflow
 
 
 def test_all_repository_relative_markdown_links_resolve():
