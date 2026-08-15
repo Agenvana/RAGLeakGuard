@@ -66,26 +66,36 @@ A locale contribution must:
 
 **Implemented now:** no source-scanning connector is available. Direct local Chroma entry points fail closed before Chroma import or source access. [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred as `not planned`, not completed. Executable endpoint evidence established durable mutation with ChromaDB 1.5.0 and 1.5.9; other versions have not established an acceptable read-only boundary.
 
-Snapshot-backed Chroma scanning remains unavailable. WP7B contains only a private, bounded
-filesystem-confinement foundation for a complete snapshot that the operator created separately. It
-does not import or construct Chroma, prove quiescence or atomic multi-file consistency, or expose a
-public function, CLI, connector, package extra, report, monitor, or webhook path. Do not activate or
-extend that private lifecycle into a scanning surface, claim a supported Chroma range, or commit to
-future support without a separate issue, executable evidence, exact-commit independent review, and
-human authorization. PyPI 0.1.0 contains the unsafe direct Chroma path and must not be used for
-Chroma scanning.
+Snapshot-backed Chroma scanning remains unavailable. WP7B contains the private, bounded
+filesystem-confinement foundation for a complete snapshot that the operator created separately.
+WP7C privately evaluates exact candidate dependencies inside a held WP7B work copy and returns only
+an opaque counter receipt after bounded two-pass enumeration, teardown, semantic revalidation, and
+effect classification. It exposes no source rows or detector input and is not detector or scan
+completion. Neither layer proves quiescence or atomic multi-file consistency or exposes a public
+function, CLI, connector, package extra, report, monitor, or webhook path.
+
+Do not activate or extend these private layers into a scanning surface, claim a supported Chroma
+range, or commit to future support without a separate WP7D issue, executable evidence, exact-commit
+independent review, and human authorization. PyPI 0.1.0 contains the unsafe direct Chroma path and
+must not be used for Chroma scanning.
 
 The private foundation passed independent review at exact implementation head
 `128decb3e0d78825e884f6dce019898b568c6ba2` and was merged through
 [PR #20](https://github.com/Agenvana/RAGLeakGuard/pull/20) as merge commit
 `5db765689d35eec8ba918f0f616d5fea34e56955`. That review record does not authorize a public
-snapshot consumer, direct Chroma access, a release, or WP7C/WP7D.
+snapshot consumer, direct Chroma access, a release, or WP7D.
 
 Changes to the private snapshot lifecycle must preserve its hard maxima, no-follow regular-object
 allowlist, same-device containment, observed-stability checks, restrictive work permissions,
 authenticated ownership/lease controls, static privacy-safe failures, and proven-owned cleanup
 boundary. Tests must use deterministic synthetic bytes and cover native filesystem behavior rather
 than inferring it from the operating-system name.
+
+Changes to the private WP7C layer must preserve exact candidate and native-filesystem gates,
+complete migration manifests, local-only settings, application-level read-only calls, two-pass
+pagination and canonicalization, keyed bounded manifests, worker termination before cleanup,
+static privacy-safe failures, zero child output, OS egress evidence, and explicit classification of
+all work-copy effects. Run its isolated candidate matrix as well as the complete no-Chroma suite.
 
 Any future connector change requires an independently reviewed read-only boundary and must test application and dependency effects, bounds, completeness, malformed input, cancellation, concurrent mutation, filesystem mutation, and outbound network behavior. An incomplete or inconsistent scan must never report success.
 

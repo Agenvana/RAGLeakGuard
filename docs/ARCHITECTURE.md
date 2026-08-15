@@ -95,7 +95,45 @@ exception text.
 These primitives have no public export, CLI option, connector hook, package extra, report path,
 monitor transition, or webhook behavior. `read_chroma()`, `scan`, and new-scan `monitor` remain at
 the WP7A disabled boundary. A separate issue, evidence set, exact-commit independent review, and
-human authorization are required before any consumer or source-scanning surface may use WP7B.
+human authorization are required before any public or detector consumer may use WP7B.
+
+### Private Chroma candidate enumerator
+
+[_chroma_snapshot.py](../src/ragleakguard/_chroma_snapshot.py) is a private WP7C compatibility and
+enumeration layer. It accepts only an exact live WP7B capability, re-authenticates ownership,
+containment, ready phase, object identities, and the held lease, and gives Chroma only the
+RAGLeakGuard-owned work copy. It never accepts a caller path. Chroma import, local Rust client
+construction, and two bounded enumeration passes run in a private child process; the parent proves
+child exit before revalidating the store, file effects, capability, and receipt.
+
+WP7B authenticates a keyed digest of the ready work-copy inventory in the in-memory capability.
+WP7C must match that digest before starting its worker, so replacement or mutation after readiness
+does not silently become the enumeration baseline. For parent-side before/after evidence, WP7C
+derives a lease-scoped key from the WP7B authentication key with the
+`RLG/WP7C/parent/store-evidence-key/v1` domain. The child generates the operation's sole random
+32-byte session key and uses separate domains for collection identity, collection-scoped record
+identity, canonical content, and collision witnesses. Neither derived evidence nor session material
+is persisted, logged, returned, or sent through IPC. Python cannot guarantee immediate zeroization.
+
+The only evaluation candidates are exact ChromaDB 1.5.0 and 1.5.9 on the explicitly tested private
+matrix. This is not a package dependency, supported-version range, connector-availability claim, or
+public compatibility promise. Complete migration manifests, explicit local settings, read-only
+SQLite preflight, deterministic metadata framing, keyed in-run consistency tokens, pagination,
+deadlines, IPC ceilings, environment sanitization, egress denial, and post-exit effect
+classification all fail closed. Known dependency writes may occur only in the disposable copy;
+logical schema, migration, collection, record, document, or metadata change fails.
+
+The private effect allowlist permits changed bytes only in `chroma.sqlite3` and, beneath an exact
+catalogued vector-segment UUID directory, `data_level0.bin`, `header.bin`, `length.bin`,
+`link_lists.bin`, or `index_metadata.pickle`. Created or removed paths fail. SQLite byte changes are
+accepted only when exact schema and migration evidence plus tenant, database, collection, segment,
+record-queue, metadata, full-text, sequence, configuration, and maintenance evidence remains equal
+before and after. This describes containment and classification inside the disposable copy, not
+source immutability or public compatibility.
+
+The opaque result contains four bounded counters only. It contains no source rows and is not
+detector completion. No detector, report, state, webhook, CLI success, public connector, package
+extra, or release path consumes it. That activation boundary belongs to separately reviewed WP7D.
 
 ### Detection and risk reports
 

@@ -53,6 +53,7 @@ _CONTROL_BYTE_ALLOWANCE = 16 * 1024
 _MAX_CLEANUP_OBJECTS = _MAX_WORK_FILES + _MAX_SOURCE_DIRECTORIES + 4
 _MAX_CLEANUP_DEPTH = _MAX_RELATIVE_DEPTH + 4
 _WINDOWS_PATH_HANDLE_CTIME_DIVERGES = os.name == "nt"
+_PATH_TYPE = type(Path())
 
 
 class _SnapshotError(RuntimeError):
@@ -72,6 +73,11 @@ class _SnapshotCleanupError(_SnapshotError):
 class _SnapshotRecoveryError(_SnapshotError):
     def __init__(self) -> None:
         super().__init__("Snapshot confinement recovery failed closed.")
+
+
+class _SnapshotBorrowError(_SnapshotError):
+    def __init__(self) -> None:
+        super().__init__("Prepared snapshot capability validation failed.")
 
 
 def _scrub_exception_chain(error: _SnapshotError) -> _SnapshotError:
@@ -185,6 +191,61 @@ def _authenticated_document(key: bytes, body: dict) -> bytes:
     document = dict(body)
     document["authentication"] = _authentication(key, body)
     return _canonical_json(document)
+
+
+def _work_copy_evidence(
+    key: bytes,
+    entries: Iterable[tuple[Tuple[str, ...], bool, int, Optional[bytes]]],
+) -> bytes:
+    """Authenticate a bounded work-copy inventory without retaining its names."""
+    if type(key) is not bytes or len(key) != 32:
+        raise _SnapshotBorrowError()
+    rows = []
+    try:
+        for parts, is_directory, size, content_hash in entries:
+            if (
+                type(parts) is not tuple
+                or not parts
+                or type(is_directory) is not bool
+                or type(size) is not int
+            ):
+                raise _SnapshotBorrowError()
+            encoded_parts = tuple(os.fsencode(part) for part in parts)
+            if any(type(part) is not bytes for part in encoded_parts):
+                raise _SnapshotBorrowError()
+            if is_directory:
+                if size != -1 or content_hash is not None:
+                    raise _SnapshotBorrowError()
+            elif size < 0 or type(content_hash) is not bytes or len(content_hash) != 32:
+                raise _SnapshotBorrowError()
+            rows.append((encoded_parts, is_directory, size, content_hash))
+            if len(rows) > _MAX_SOURCE_FILES + _MAX_SOURCE_DIRECTORIES:
+                raise _SnapshotBorrowError()
+        rows.sort(key=lambda row: row[0])
+        digest = hmac.new(key, digestmod=hashlib.sha256)
+
+        def frame(tag: bytes, value: bytes) -> None:
+            digest.update(bytes((len(tag),)))
+            digest.update(tag)
+            digest.update(len(value).to_bytes(8, "big"))
+            digest.update(value)
+
+        frame(b"domain", b"RLG/WP7B/work-copy-evidence/v1")
+        for number, (parts, is_directory, size, content_hash) in enumerate(rows, 1):
+            frame(b"entry", number.to_bytes(8, "big"))
+            frame(b"parts", len(parts).to_bytes(8, "big"))
+            for part in parts:
+                frame(b"part", part)
+            frame(b"type", b"directory" if is_directory else b"file")
+            if not is_directory:
+                frame(b"size", size.to_bytes(8, "big"))
+                frame(b"sha256", content_hash)
+        frame(b"entries", len(rows).to_bytes(8, "big"))
+        return digest.digest()
+    except _SnapshotBorrowError:
+        raise
+    except (OSError, ValueError, TypeError, UnicodeError, OverflowError):
+        raise _SnapshotBorrowError() from None
 
 
 def _identity(value: os.stat_result) -> _Identity:
@@ -1165,6 +1226,8 @@ class _PreparedSnapshot:
         "_limits",
         "_workspace_identity",
         "_snapshot_identity",
+        "_data_evidence",
+        "_process_id",
         "_closed",
     )
 
@@ -1182,6 +1245,7 @@ class _PreparedSnapshot:
         limits: _Limits,
         workspace_identity: _Identity,
         snapshot_identity: _Identity,
+        data_evidence: bytes,
     ) -> None:
         self._base = base
         self._workspace = workspace
@@ -1195,6 +1259,8 @@ class _PreparedSnapshot:
         self._limits = limits
         self._workspace_identity = workspace_identity
         self._snapshot_identity = snapshot_identity
+        self._data_evidence = data_evidence
+        self._process_id = os.getpid()
         self._closed = False
 
     def __repr__(self) -> str:
@@ -1251,6 +1317,151 @@ class _PreparedSnapshot:
     def __exit__(self, exc_type, exc_value, traceback) -> bool:
         self.cleanup()
         return False
+
+
+class _BorrowedSnapshot:
+    """Opaque, short-lived result of authenticating a prepared capability."""
+
+    __slots__ = (
+        "data",
+        "workspace_id",
+        "snapshot_id",
+        "lease_id",
+        "key",
+        "workspace_identity",
+        "snapshot_identity",
+        "data_identity",
+        "lease_identity",
+        "data_evidence",
+    )
+
+    def __init__(
+        self,
+        *,
+        data: Path,
+        workspace_id: str,
+        snapshot_id: str,
+        lease_id: str,
+        key: bytes,
+        workspace_identity: _Identity,
+        snapshot_identity: _Identity,
+        data_evidence: bytes,
+        data_identity: _Identity,
+        lease_identity: _Identity,
+    ) -> None:
+        self.data = data
+        self.workspace_id = workspace_id
+        self.snapshot_id = snapshot_id
+        self.lease_id = lease_id
+        self.key = key
+        self.workspace_identity = workspace_identity
+        self.snapshot_identity = snapshot_identity
+        self.data_identity = data_identity
+        self.lease_identity = lease_identity
+        self.data_evidence = data_evidence
+
+    def __repr__(self) -> str:
+        return "<RAGLeakGuard private snapshot borrow: redacted>"
+
+
+def _borrow_prepared_snapshot(prepared: object) -> _BorrowedSnapshot:
+    """Re-authenticate and borrow a live WP7B work copy without caller path input."""
+    if type(prepared) is not _PreparedSnapshot:
+        raise _SnapshotBorrowError()
+    try:
+        if (
+            prepared._closed is not False
+            or prepared._process_id != os.getpid()
+            or type(prepared._data_evidence) is not bytes
+            or len(prepared._data_evidence) != 32
+        ):
+            raise _SnapshotBorrowError()
+        base = prepared._base
+        workspace = prepared._workspace
+        snapshot = prepared._snapshot
+        data = prepared._data
+        if not all(type(path) is _PATH_TYPE for path in (base, workspace, snapshot, data)):
+            raise _SnapshotBorrowError()
+        if (
+            workspace.parent != base
+            or snapshot.parent != workspace
+            or data.parent != snapshot
+            or workspace.name != _WORKSPACE_PREFIX + prepared._workspace_id
+            or snapshot.name != _SNAPSHOT_PREFIX + prepared._snapshot_id
+            or data.name != _PAYLOAD_DIRECTORY
+        ):
+            raise _SnapshotBorrowError()
+        base_resolved = _resolved(base, _SnapshotBorrowError)
+        workspace_resolved = _resolved(workspace, _SnapshotBorrowError)
+        snapshot_resolved = _resolved(snapshot, _SnapshotBorrowError)
+        data_resolved = _resolved(data, _SnapshotBorrowError)
+        if (
+            base_resolved != base
+            or workspace_resolved != workspace
+            or snapshot_resolved != snapshot
+            or data_resolved != data
+            or workspace_resolved.parent != base_resolved
+            or snapshot_resolved.parent != workspace_resolved
+            or data_resolved.parent != snapshot_resolved
+        ):
+            raise _SnapshotBorrowError()
+        base_identity = _validate_directory(base, error_type=_SnapshotBorrowError)
+        workspace_identity = _validate_directory(
+            workspace, device=base_identity.device, error_type=_SnapshotBorrowError
+        )
+        snapshot_identity = _validate_directory(
+            snapshot, device=base_identity.device, error_type=_SnapshotBorrowError
+        )
+        data_identity = _validate_directory(
+            data, device=base_identity.device, error_type=_SnapshotBorrowError
+        )
+        if (
+            not _same_object(workspace_identity, prepared._workspace_identity)
+            or not _same_object(snapshot_identity, prepared._snapshot_identity)
+            or _windows_has_named_streams(workspace)
+            or _windows_has_named_streams(snapshot)
+            or _windows_has_named_streams(data)
+        ):
+            raise _SnapshotBorrowError()
+        for path in (workspace, snapshot, data):
+            _assert_restrictive(path, True)
+        loaded_workspace_id, _, loaded_key = _load_workspace(workspace, _SnapshotBorrowError)
+        loaded_snapshot_id, loaded_lease_id, phase = _load_snapshot_marker(
+            snapshot,
+            loaded_workspace_id,
+            loaded_key,
+            _SnapshotBorrowError,
+            prepared._lock,
+        )
+        lease_identity = prepared._lock.identity
+        lease_path_identity = _identity(_lstat(snapshot / _LEASE_FILE, _SnapshotBorrowError))
+        if (
+            loaded_workspace_id != prepared._workspace_id
+            or loaded_snapshot_id != prepared._snapshot_id
+            or loaded_lease_id != prepared._lease_id
+            or phase != "ready"
+            or not hmac.compare_digest(loaded_key, prepared._key)
+            or not _same_path_handle_identity(lease_path_identity, lease_identity)
+        ):
+            raise _SnapshotBorrowError()
+        return _BorrowedSnapshot(
+            data=data,
+            workspace_id=prepared._workspace_id,
+            snapshot_id=prepared._snapshot_id,
+            lease_id=prepared._lease_id,
+            key=prepared._key,
+            workspace_identity=workspace_identity,
+            snapshot_identity=snapshot_identity,
+            data_identity=data_identity,
+            lease_identity=lease_identity,
+            data_evidence=prepared._data_evidence,
+        )
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except _SnapshotBorrowError as error:
+        raise _scrub_exception_chain(error)
+    except BaseException:
+        raise _SnapshotBorrowError() from None
 
 
 def _prepare_snapshot_impl(
@@ -1413,6 +1624,18 @@ def _prepare_snapshot_impl(
             limits=limits,
             workspace_identity=workspace_identity,
             snapshot_identity=snapshot_identity,
+            data_evidence=_work_copy_evidence(
+                key,
+                (
+                    (
+                        entry.parts,
+                        entry.is_directory,
+                        -1 if entry.is_directory else entry.identity.size,
+                        None if entry.is_directory else copied_hashes[entry.parts],
+                    )
+                    for entry in second_copy_inventory.entries
+                ),
+            ),
         )
         return prepared
     except BaseException as original_error:
