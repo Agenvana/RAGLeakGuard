@@ -903,6 +903,7 @@ def test_wp7d_workflow_has_five_exact_cells_and_mandatory_evidence():
         "RLG_WP7D_ACTIVATION",
         "RLG_WP7D_MANDATORY",
         "RLG_WP7D_OS_EGRESS_DENIED",
+        "RLG_WP7C_OS_EGRESS_DENIED",
         "RLG_REQUIRE_NATIVE_SNAPSHOT_FS",
         "iptables",
         "sandbox-exec",

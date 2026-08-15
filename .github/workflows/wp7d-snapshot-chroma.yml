@@ -124,6 +124,7 @@ jobs:
           PYTHONWARNINGS: ignore
           RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
           RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7C_OS_EGRESS_DENIED: "1"
           RLG_WP7D_ACTIVATION: "1"
           RLG_WP7D_MANDATORY: "1"
           RLG_WP7D_OS_EGRESS_DENIED: "1"
@@ -131,7 +132,7 @@ jobs:
         run: |
           python_path="$(command -v python)"
           cd /mnt/rlg-wp7d-ext4/repository
-          sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7D_ACTIVATION,RLG_WP7D_MANDATORY,RLG_WP7D_OS_EGRESS_DENIED,TMPDIR \
+          sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7C_OS_EGRESS_DENIED,RLG_WP7D_ACTIVATION,RLG_WP7D_MANDATORY,RLG_WP7D_OS_EGRESS_DENIED,TMPDIR \
             -u "${RLG_WP7D_TEST_USER}" env HOME=/mnt/rlg-wp7d-ext4/home \
             "${python_path}" -m pytest tests/test_wp7d_snapshot_activation.py tests/test_chroma_snapshot_private.py -q --basetemp /mnt/rlg-wp7d-ext4/focused
 
@@ -143,6 +144,7 @@ jobs:
           PYTHONWARNINGS: ignore
           RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
           RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7C_OS_EGRESS_DENIED: "1"
           RLG_WP7D_ACTIVATION: "1"
           RLG_WP7D_MANDATORY: "1"
           RLG_WP7D_OS_EGRESS_DENIED: "1"
@@ -150,7 +152,7 @@ jobs:
         run: |
           python_path="$(command -v python)"
           cd /mnt/rlg-wp7d-ext4/repository
-          sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7D_ACTIVATION,RLG_WP7D_MANDATORY,RLG_WP7D_OS_EGRESS_DENIED,TMPDIR \
+          sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7C_OS_EGRESS_DENIED,RLG_WP7D_ACTIVATION,RLG_WP7D_MANDATORY,RLG_WP7D_OS_EGRESS_DENIED,TMPDIR \
             -u "${RLG_WP7D_TEST_USER}" env HOME=/mnt/rlg-wp7d-ext4/home \
             "${python_path}" -m pytest -q --basetemp /mnt/rlg-wp7d-ext4/complete
 
@@ -162,6 +164,7 @@ jobs:
           PYTHONWARNINGS: ignore
           RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
           RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7C_OS_EGRESS_DENIED: "1"
           RLG_WP7D_ACTIVATION: "1"
           RLG_WP7D_MANDATORY: "1"
           RLG_WP7D_OS_EGRESS_DENIED: "1"
@@ -175,6 +178,7 @@ jobs:
           PYTHONWARNINGS: ignore
           RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
           RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7C_OS_EGRESS_DENIED: "1"
           RLG_WP7D_ACTIVATION: "1"
           RLG_WP7D_MANDATORY: "1"
           RLG_WP7D_OS_EGRESS_DENIED: "1"
@@ -188,6 +192,7 @@ jobs:
           PYTHONWARNINGS: ignore
           RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
           RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7C_OS_EGRESS_DENIED: "1"
           RLG_WP7D_ACTIVATION: "1"
           RLG_WP7D_MANDATORY: "1"
           RLG_WP7D_OS_EGRESS_DENIED: "1"
@@ -201,6 +206,7 @@ jobs:
           PYTHONWARNINGS: ignore
           RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
           RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7C_OS_EGRESS_DENIED: "1"
           RLG_WP7D_ACTIVATION: "1"
           RLG_WP7D_MANDATORY: "1"
           RLG_WP7D_OS_EGRESS_DENIED: "1"
