@@ -10,11 +10,12 @@
 
 RAGLeakGuard is an early-development security project for diagnosing sensitive data at rest.
 Its detection, risk-policy, monitor-state, and authenticated webhook components remain in the
-repository, but **no source-scanning connector is currently available**.
+repository. A bounded aggregate-only Chroma connector is implemented for complete operator-created
+offline snapshots. Direct/live source-store scanning remains disabled.
 
 ## Chroma safety notice
 
-Direct local Chroma scanning is disabled. Executable endpoint evidence established that
+Direct/live local Chroma scanning is disabled. Executable endpoint evidence established that
 ChromaDB 1.5.0 and 1.5.9 may modify durable store files during client construction or reads.
 Other Chroma versions have not established an acceptable read-only boundary. This is the exact
 tested scope; it is not a claim about every Chroma version.
@@ -24,14 +25,16 @@ it was not completed. WP7B's private, bounded operator-snapshot confinement foun
 independent review at exact implementation head
 `128decb3e0d78825e884f6dce019898b568c6ba2` and was merged through
 [PR #20](https://github.com/Agenvana/RAGLeakGuard/pull/20) as merge commit
-`5db765689d35eec8ba918f0f616d5fea34e56955`. That foundation only confines a complete filesystem
-snapshot created separately by the operator; it does not import or construct Chroma and exposes no
-public function, CLI, connector, report, monitor, or webhook path.
+`5db765689d35eec8ba918f0f616d5fea34e56955`. WP7D now consumes that private work copy through the
+reviewed WP7C two-pass enumerator and performs detection inside the isolated worker. Public
+activation is limited to exact ChromaDB 1.5.9 on Linux/ext4 with Python 3.10–3.12, macOS 15/APFS
+with Python 3.12, and Windows/NTFS with Python 3.12. ChromaDB 1.5.0 remains private evidence only
+and is rejected by the public activation path.
 
-Snapshot-backed public scanning remains unavailable and requires separate feasibility, security,
-activation, and exact-commit review. Direct Chroma access remains disabled. No supported Chroma
-version range, future availability, connector completeness, read-only source access, or
-production-safety claim is made.
+The operator—not RAGLeakGuard—must create a complete, quiescent/full-filesystem snapshot before
+invocation. RAGLeakGuard does not prove its provenance, quiescence, completeness, or transactional
+atomic consistency. The snapshot is potentially hostile and sensitive. No general Chroma support,
+read-only live-source access, connector completeness, or production-safety claim is made.
 
 The PyPI `0.1.0` package contains the unsafe direct Chroma path and **must not be used for Chroma
 scanning**. Yanking that package and publishing a corrective release require separate human
@@ -39,10 +42,13 @@ maintainer authorization and have not been performed by this repository change.
 
 ## Current command behavior
 
-A syntactically valid `scan --source chroma` request exits with code 6 and the static disabled-path
-message before Chroma import, detector initialization, source access, report work, or success output.
-`read_chroma()` raises the public `ChromaConnectorUnavailableError` synchronously without inspecting
-its argument.
+`scan --source chroma` accepts only `--snapshot`, `--work-parent`, a narrow pseudonymous
+`--source-id`, the explicit `--acknowledge-offline-complete-snapshot`, optional `--locale`, and
+`--report`. Legacy `--path` is rejected before source access. A success line is emitted only after
+bounded copy preparation, two-pass enumeration, complete detection, exact aggregate equality,
+worker termination, final capability validation, cleanup, and atomic report finalization.
+`read_chroma()` still raises `ChromaConnectorUnavailableError` synchronously without inspecting its
+arguments.
 
 `monitor` continues to authenticate its key and state first. If authenticated state contains a
 pending WP6 alert, the existing configuration, backoff, retry, transport, ambiguous-delivery, and
@@ -50,18 +56,31 @@ atomic-clear recovery workflow runs without a new scan. If no alert is pending a
 otherwise start, `monitor` exits 6 without changing state or creating a report, alert, or webhook.
 
 Ordinary missing-option, unsupported-source, and malformed/unsupported-locale validation still exits
-2. Monitor key/state failures exit 4; pending-alert and webhook failures retain exit 5.
+2. Scan/report uncertainty exits 1, detection-runtime failure exits 3, and an unavailable exact
+candidate or activation environment exits 6. Monitor key/state failures exit 4; pending-alert and
+webhook failures retain exit 5.
 
-```text
-Local Chroma scanning is disabled because executable endpoint evidence proved that ChromaDB 1.5.0 and 1.5.9 may modify durable store files during client construction or reads, while other versions have not established an acceptable read-only boundary. No report, monitor state, or webhook was created or replaced.
+Install the exact optional Chroma candidate and the existing detector stack, then point the command
+only at a separately created offline snapshot:
+
+```bash
+python -m pip install ".[chroma-snapshot,detect]"
+python -m spacy download en_core_web_sm
+ragleakguard scan --source chroma \
+  --snapshot /private/offline-snapshot \
+  --work-parent /private/ragleakguard-work \
+  --source-id source-1 \
+  --acknowledge-offline-complete-snapshot \
+  --report /private/reports/source-1.md
 ```
 
-There is intentionally no Chroma scan or monitor quickstart while direct access is disabled.
+The paths above are placeholders and are never included in normal console output or the report.
+There is intentionally no Chroma monitor quickstart because monitor new scans remain unavailable.
 
 ## Development setup
 
-The Chroma runtime extra has been removed. The following installs the package, detection stack, and
-test tools; it does not provide a source-scanning connector.
+Chroma remains outside base dependencies. The following installs the exact snapshot candidate,
+detection stack, and test tools:
 
 ```bash
 git clone https://github.com/Agenvana/RAGLeakGuard.git
@@ -69,7 +88,7 @@ cd RAGLeakGuard
 python -m venv .venv
 # Activate the environment for your platform.
 python -m pip install --upgrade pip
-python -m pip install -e ".[detect,dev]"
+python -m pip install -e ".[chroma-snapshot,detect,dev]"
 python -m spacy download en_core_web_sm
 python -m pytest -q
 ```
@@ -84,9 +103,8 @@ against real, production, customer, or otherwise sensitive stores.
 - **Locale packs (`--locale`):** `au` is the only implemented opt-in country pack.
 
 Detection is best-effort. A result from the detector library is not proof that data is safe,
-compliant, or free of sensitive information. When the required model is absent, Presidio may try to
-acquire it during initialization; runtime acquisition control and exact model pinning remain residual
-hardening work. Disabled CLI new-scan paths do not initialize this runtime.
+compliant, or free of sensitive information. The required spaCy model must already be installed;
+the isolated worker denies model acquisition, network egress, and nested processes.
 
 ## Monitor recovery
 
@@ -118,9 +136,9 @@ or safety. See [benchmark reproducibility](docs/BENCHMARK_REPRODUCIBILITY.md).
 
 ## Roadmap and non-claims
 
-See [ROADMAP.md](ROADMAP.md). Snapshot-backed public scanning, planned connectors, Prevent/Fix,
-Prove, Control Plane, erasure, compliance, certification, and assurance surfaces are not
-implemented. The completed private WP7B confinement foundation is not a connector.
+See [ROADMAP.md](ROADMAP.md). The finite operator-snapshot connector described above is implemented.
+Additional connectors, direct/live scanning, monitor new scans, Prevent/Fix, Prove, Control Plane,
+erasure, compliance, certification, and assurance surfaces are not implemented.
 
 ## License
 

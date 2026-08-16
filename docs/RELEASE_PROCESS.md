@@ -4,8 +4,8 @@ RAGLeakGuard releases require explicit human approval. CI, an agent, or a merged
 
 ## Current baseline
 
-Repository and release-system facts verified for the WP7B post-review baseline starting from merge
-commit `5db765689d35eec8ba918f0f616d5fea34e56955`:
+Repository and release-system facts carried forward from the WP7B review record and updated for the
+unreleased WP7D source implementation:
 
 - PyPI reports `ragleakguard` version `0.1.0` and Python `>=3.9`.
 - `pyproject.toml` declares version `0.1.0`, while `ragleakguard.__version__` is `0.0.1`. This mismatch must be resolved before the next release; this documentation-only change does not alter either value.
@@ -13,6 +13,9 @@ commit `5db765689d35eec8ba918f0f616d5fea34e56955`:
 - CI runs the suite for pull requests and pushes to `main` on ext4/Python 3.9, APFS/Python 3.9,
   NTFS/Python 3.9, and NTFS/Python 3.12. This is the finite WP7B evidence matrix, not a documented
   supported release matrix.
+- WP7D adds five mandatory exact ChromaDB 1.5.9 cells: Linux/ext4 Python 3.10–3.12, macOS 15/APFS
+  Python 3.12, and Windows/NTFS Python 3.12. These are source-commit activation evidence, not a
+  published package support claim.
 - CI installs ranged dependencies and downloads `en_core_web_sm`; inputs are not fully locked.
 - There is no package-build, artifact-install, provenance, checksum, secret/dependency-scan, or PyPI publication workflow in this repository.
 
@@ -28,8 +31,10 @@ WP7B review and merge record:
   implementation head `128decb3e0d78825e884f6dce019898b568c6ba2` and was merged through
   [PR #20](https://github.com/Agenvana/RAGLeakGuard/pull/20) as merge commit
   `5db765689d35eec8ba918f0f616d5fea34e56955`.
-- That private foundation is not a connector. Snapshot-backed public scanning remains unavailable
-  and not implemented, direct Chroma access remains disabled, and no release has been published.
+- WP7D adds a bounded aggregate-only consumer of that foundation for complete operator-created
+  offline snapshots. Direct/live Chroma and monitor new scans remain disabled. The operator must
+  create a complete, quiescent/full-filesystem snapshot; RAGLeakGuard does not prove provenance,
+  quiescence, completeness, or atomic consistency. No corrective release has been published.
 
 Do not describe the current workflow as a reproducible release pipeline.
 
@@ -56,10 +61,9 @@ All applicable gates must pass on the exact release commit.
 - Reconcile README, roadmap, architecture, threat model, security policy, CLI help, and package metadata with implemented behavior.
 - Re-check every present-tense security/compliance/production claim against evidence.
 - Confirm that planned connectors, locales, Prevent/Fix, Prove, Control Plane, certification, and assurance behavior are labeled planned.
-- Confirm that no source-scanning connector is advertised; the completed private WP7B confinement
-  foundation is distinguished from unavailable snapshot-backed public scanning; direct Chroma
-  access remains disabled; and no Chroma supported-version or guaranteed-future-support claim
-  appears.
+- Confirm that only the finite exact-1.5.9 operator-snapshot connector is advertised; direct/live
+  Chroma and monitor new scans remain disabled; operator snapshot duties and non-proofs are explicit;
+  and no broader Chroma range or guaranteed-future-support claim appears.
 - Review logs, errors, reports, state, webhooks, fixtures, and built artifacts for secrets, PII canaries, paths, and tenant/record identifiers.
 - Complete coordinated disclosure for any vulnerability that should not be exposed by release notes.
 
@@ -68,7 +72,8 @@ All applicable gates must pass on the exact release commit.
 - Use one authoritative version and assert equality across package metadata, runtime `__version__`, built wheel/sdist metadata, CLI output if exposed, tag, and release notes.
 - Document schema/state and CLI-exit migrations. Provide an explicit upgrade path or fail closed on incompatible persisted state.
 - Define the finite supported Python/platform matrix before release. The current WP7B CI jobs are
-  evidence for their exact Python/filesystem environments only, not a supported release matrix.
+  evidence for their exact Python/filesystem environments only. The five WP7D cells likewise prove
+  only the immutable source head and are not a published release matrix.
 
 ### 4. Tests and documentation
 
@@ -89,7 +94,11 @@ python -m twine check dist/*
 - Build wheel and sdist once from the reviewed commit in a clean environment.
 - Record builder OS/architecture, Python version, build frontend/backend versions, lock/material inputs, source SHA, and timestamp.
 - Inspect both archives for unexpected files, secrets, stores, state, reports, credentials, or private material.
-- Install each artifact into a fresh environment without Chroma and exercise imports, CLI help, synchronous `read_chroma()` failure, disabled scan/monitor exit 6, and pending-alert recovery without repository-relative imports.
+- Install each artifact into a fresh environment without Chroma and exercise imports, CLI help,
+  synchronous `read_chroma()` failure, legacy direct-path rejection, disabled monitor exit 6, and
+  pending-alert recovery without repository-relative imports. Separately install the exact
+  `chroma-snapshot` and detection extras on every claimed activation tuple and exercise a synthetic
+  complete operator snapshot, cleanup, and aggregate report finalization.
 - Generate SHA-256 checksums and provenance for the final artifacts. Do not rebuild after approval; publish the reviewed bytes.
 
 ### 6. Supply chain
@@ -115,14 +124,14 @@ Python package indexes are append-only: never replace files for an existing vers
 5. Add an advisory/release note, upgrade guidance, affected-version range, and evidence after coordinated disclosure approval.
 6. Review whether reports or public claims relied on the affected behavior. Amend them separately; never rewrite released artifacts.
 
-For the WP7A corrective release, the release note must say that direct local Chroma scanning is
-disabled; no source-scanning connector is currently available; Issue #15 was deferred, not
-completed; ChromaDB 1.5.0 and 1.5.9 exhibited durable mutation; other versions have not established
-an acceptable read-only boundary; the completed private WP7B confinement foundation is not a
-connector; snapshot-backed public scanning is unavailable and not implemented; direct Chroma
-access remains disabled; and PyPI 0.1.0 must not be used for Chroma scanning. This repository has no unreleased release-note
-mechanism, so do not invent a version or changelog file; carry the exact proposed wording in the
-reviewed pull request until a human authorizes release preparation.
+For any future corrective release, the release note must say that direct/live Chroma and monitor new
+scans are disabled; Issue #15 was deferred, not completed; ChromaDB 1.5.0 and 1.5.9 exhibited durable
+mutation; only exact 1.5.9 operator snapshots on the five reviewed tuples are activated; the
+operator must create a complete quiescent/full-filesystem snapshot; provenance, quiescence,
+completeness, and atomic consistency are not proved; detection is best-effort; and PyPI 0.1.0 must
+not be used for Chroma scanning. This repository has no unreleased release-note mechanism, so do not
+invent a version or changelog file; carry proposed wording in the reviewed pull request until a
+human authorizes release preparation.
 
 ## Planned automation
 

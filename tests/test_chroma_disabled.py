@@ -113,6 +113,14 @@ def _assert_disabled_output(result):
     assert not any(signal in result.output for signal in SUCCESS_SIGNALS)
 
 
+def _assert_legacy_path_rejected(result):
+    assert result.exit_code == cli.EXIT_USAGE
+    assert "Legacy --path is rejected" in result.output
+    assert SOURCE_CANARY not in result.output
+    assert PRIVACY_CANARY not in result.output
+    assert not any(signal in result.output for signal in SUCCESS_SIGNALS)
+
+
 @pytest.mark.parametrize("existing_report", [False, True])
 def test_scan_disabled_path_has_no_import_detector_source_report_or_network_side_effect(
     monkeypatch, tmp_path, existing_report
@@ -165,7 +173,7 @@ def test_scan_disabled_path_has_no_import_detector_source_report_or_network_side
         ],
     )
 
-    _assert_disabled_output(result)
+    _assert_legacy_path_rejected(result)
     assert source_calls == []
     assert import_calls == []
     assert network_calls == []
@@ -201,7 +209,7 @@ def test_scan_never_constructs_a_chroma_client_or_embedding_function(
         ],
     )
 
-    _assert_disabled_output(result)
+    _assert_legacy_path_rejected(result)
     assert calls == []
 
 
@@ -345,11 +353,15 @@ def test_monitor_initialize_disabled_path_leaves_absent_state_absent(
 @pytest.mark.parametrize(
     ("args", "exit_code", "message"),
     [
-        (["scan", "--source", "chroma"], cli.EXIT_USAGE, "--path is required"),
+        (
+            ["scan", "--source", "chroma"],
+            cli.EXIT_USAGE,
+            "Snapshot scan arguments are incomplete",
+        ),
         (
             ["scan", "--source", "chroma", "--path", "synthetic", "--locale", "uk"],
             cli.EXIT_USAGE,
-            "Unsupported locale",
+            "Legacy --path is rejected",
         ),
         (
             ["scan", "--source", "pinecone", "--path", "synthetic"],

@@ -18,10 +18,11 @@ Early development (the **Diagnose** stage). Checkboxes are intent, not commitmen
 - [ ] **MRN / record-identifier recogniser** (from Report #1 benchmark, 2026-07-04): `MRN-482913`-style chart numbers are invisible to every engine tested (0–40% recall, and then only via mislabels). Context-gated pattern (`MRN-`, "chart", "record"). Directly feeds the Sep clinic/voice-agent report.
 
 ## Connectors
-No source-scanning connector is currently available.
+A bounded aggregate-only operator-snapshot Chroma connector is implemented in source. Direct/live
+source-store access remains disabled.
 
 - [x] **WP7B private bounded operator-snapshot confinement foundation** — the private filesystem lifecycle passed independent review at exact implementation head `128decb3e0d78825e884f6dce019898b568c6ba2` and was merged through [PR #20](https://github.com/Agenvana/RAGLeakGuard/pull/20) as merge commit `5db765689d35eec8ba918f0f616d5fea34e56955`. It confines a complete snapshot created separately by the operator. It does not import or construct Chroma, expose a public scanning surface, or prove source quiescence, provenance, completeness, or atomic multi-file consistency.
-- [ ] **Snapshot-backed public Chroma scanning** — unavailable and not implemented. Any activation requires a separate issue, feasibility and security evidence, exact-commit independent review, and human authorization; future availability is not a commitment. Direct local Chroma access remains disabled after executable endpoint evidence established durable mutation for ChromaDB 1.5.0 and 1.5.9. Other versions have not established an acceptable read-only boundary. [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred, not completed.
+- [x] **WP7D bounded operator-snapshot Chroma activation** — exact ChromaDB 1.5.9 only, with five native-filesystem/Python cells: Linux/ext4 3.10–3.12, macOS 15/APFS 3.12, and Windows/NTFS 3.12. It runs detection inside the isolated WP7C worker and returns bounded counters and entity-type counts only after two-pass equality, termination, revalidation, cleanup, and atomic aggregate-report finalization. The operator must create a complete quiescent/full-filesystem snapshot separately; RAGLeakGuard does not prove provenance, quiescence, completeness, or atomic consistency. Direct/live access and monitor new scans remain disabled. ChromaDB 1.5.0 remains private evidence only. [Issue #15](https://github.com/Agenvana/RAGLeakGuard/issues/15) was deferred, not completed.
 - [ ] Pinecone
 - [ ] pgvector (Postgres)
 - [ ] Qdrant, Weaviate
