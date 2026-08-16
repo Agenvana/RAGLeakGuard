@@ -62,6 +62,28 @@ class ChromaSnapshotScanError(RuntimeError):
         super().__init__(CHROMA_SNAPSHOT_FAILURE_MESSAGE)
 
 
+def _scrub_public_error(error: BaseException) -> BaseException:
+    """Detach every retained exception before a static failure crosses the boundary."""
+    pending = [error]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+        nested = getattr(current, "exceptions", ())
+        if type(nested) is tuple:
+            pending.extend(nested)
+        current.__cause__ = None
+        current.__context__ = None
+        current.__suppress_context__ = True
+    return error
+
+
 def _bounded_integer(value: object, maximum: int) -> int:
     if type(value) is not int or value < 0 or value > maximum:
         raise ValueError("Aggregate counter is outside the WP7D contract.")
@@ -179,11 +201,15 @@ def scan_chroma_snapshot(
     validate_chroma_source_id(source_id)
     normalized_locale = normalize_locale(locale)
     normalized_locale = validate_detection_runtime(normalized_locale)
+    activation_failure = None
     try:
-        _chroma_snapshot._public_activation_gate()
+        _chroma_snapshot._public_activation_gate(work_parent)
     except BaseException:
-        raise ChromaSnapshotUnavailableError() from None
+        activation_failure = ChromaSnapshotUnavailableError()
+    if activation_failure is not None:
+        raise _scrub_public_error(activation_failure)
 
+    preparation_failure = None
     try:
         prepared = _snapshot._prepare_snapshot(
             snapshot,
@@ -193,7 +219,9 @@ def scan_chroma_snapshot(
     except (KeyboardInterrupt, SystemExit):
         raise
     except BaseException:
-        raise ChromaSnapshotScanError() from None
+        preparation_failure = ChromaSnapshotScanError()
+    if preparation_failure is not None:
+        raise _scrub_public_error(preparation_failure)
 
     receipt = None
     detector_document = None
@@ -208,12 +236,16 @@ def scan_chroma_snapshot(
         )
     except BaseException:
         failed = True
+    cleanup_failure = None
     try:
         prepared.cleanup()
     except BaseException:
-        raise ChromaSnapshotScanError() from None
+        cleanup_failure = ChromaSnapshotScanError()
+    if cleanup_failure is not None:
+        raise _scrub_public_error(cleanup_failure)
     if failed or receipt is None or type(detector_document) is not dict:
         raise ChromaSnapshotScanError() from None
+    result_failure = None
     try:
         detector = DetectorAggregate(**detector_document)
         return ChromaSnapshotScanResult(
@@ -224,7 +256,8 @@ def scan_chroma_snapshot(
             detector=detector,
         )
     except BaseException:
-        raise ChromaSnapshotScanError() from None
+        result_failure = ChromaSnapshotScanError()
+    raise _scrub_public_error(result_failure)
 
 
 def read_pinecone(index: str) -> Iterator[Dict[str, Any]]:

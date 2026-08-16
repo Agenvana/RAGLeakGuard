@@ -214,7 +214,7 @@ def test_scan_supported_locale_forms_remain_compatible(
     monkeypatch.setattr(
         connectors._chroma_snapshot,
         "_public_activation_gate",
-        lambda: (_ for _ in ()).throw(RuntimeError()),
+        lambda path: (_ for _ in ()).throw(RuntimeError()),
     )
     monkeypatch.setattr(
         connectors._snapshot,

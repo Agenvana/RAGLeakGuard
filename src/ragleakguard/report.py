@@ -50,19 +50,40 @@ class ReportFinalizationError(RuntimeError):
         super().__init__(_REPORT_FAILURE)
 
 
-def _scrub_report_error() -> ReportFinalizationError:
-    error = ReportFinalizationError()
-    error.__cause__ = None
-    error.__context__ = None
-    error.__suppress_context__ = True
+def _scrub_report_error(
+    error: Optional[ReportFinalizationError] = None,
+) -> ReportFinalizationError:
+    """Detach every retained exception that could carry operator-controlled data."""
+    if type(error) is not ReportFinalizationError:
+        error = ReportFinalizationError()
+    pending = [error]
+    seen = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+        nested = getattr(current, "exceptions", ())
+        if type(nested) is tuple:
+            pending.extend(nested)
+        current.__cause__ = None
+        current.__context__ = None
+        current.__suppress_context__ = True
     return error
 
 
 def _report_now(clock: Callable[[], float]) -> float:
+    failure = None
     try:
         value = clock()
     except BaseException:
-        raise ReportFinalizationError() from None
+        failure = ReportFinalizationError()
+    if failure is not None:
+        raise _scrub_report_error(failure)
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise ReportFinalizationError()
     return float(value)
@@ -132,6 +153,8 @@ def _report_identity(path: Path):
 
 
 def _read_existing_report(path: Path):
+    failure = None
+    result = None
     try:
         identity = _report_identity(path)
         flags = os.O_RDONLY | int(getattr(os, "O_BINARY", 0))
@@ -152,13 +175,16 @@ def _read_existing_report(path: Path):
                 total += len(chunk)
             if total > _MAX_FINAL_REPORT_BYTES:
                 raise ReportFinalizationError()
-            return identity, b"".join(chunks)
+            result = (identity, b"".join(chunks))
         finally:
             os.close(descriptor)
-    except ReportFinalizationError:
-        raise
+    except ReportFinalizationError as error:
+        failure = error
     except BaseException:
-        raise ReportFinalizationError() from None
+        failure = ReportFinalizationError()
+    if failure is not None:
+        raise _scrub_report_error(failure)
+    return result
 
 
 def _write_all(descriptor: int, encoded: bytes) -> None:
@@ -177,20 +203,25 @@ def _new_report_temp(
     clock: Callable[[], float],
     token_source: Callable[[int], bytes],
 ):
-    _report_check(deadline, clock)
-    try:
-        token = token_source(16)
-    except BaseException:
-        raise ReportFinalizationError() from None
-    if type(token) is not bytes or len(token) != 16:
-        raise ReportFinalizationError()
-    path = parent / (_REPORT_TEMP_PREFIX + token.hex() + _REPORT_TEMP_SUFFIX)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | int(getattr(os, "O_BINARY", 0))
-    flags |= int(getattr(os, "O_NOFOLLOW", 0))
+    failure = None
+    result = None
+    path = None
     descriptor = None
     owned_identity = None
     failed = True
     try:
+        _report_check(deadline, clock)
+        try:
+            token = token_source(16)
+        except BaseException:
+            raise ReportFinalizationError() from None
+        if type(token) is not bytes or len(token) != 16:
+            raise ReportFinalizationError()
+        path = parent / (_REPORT_TEMP_PREFIX + token.hex() + _REPORT_TEMP_SUFFIX)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | int(
+            getattr(os, "O_BINARY", 0)
+        )
+        flags |= int(getattr(os, "O_NOFOLLOW", 0))
         descriptor = os.open(path, flags, 0o600)
         _snapshot._harden(path, False)
         owned_identity = _snapshot._identity(os.fstat(descriptor))
@@ -202,24 +233,27 @@ def _new_report_temp(
         if identity.size != len(encoded):
             raise ReportFinalizationError()
         failed = False
-        return path, identity
-    except ReportFinalizationError:
-        raise
+        result = (path, identity)
+    except ReportFinalizationError as error:
+        failure = error
     except BaseException:
-        raise ReportFinalizationError() from None
+        failure = ReportFinalizationError()
     finally:
         if descriptor is not None:
             try:
                 os.close(descriptor)
             except BaseException:
                 pass
-        if failed and owned_identity is not None:
+        if failed and path is not None and owned_identity is not None:
             try:
                 observed = _report_identity(path)
                 if _snapshot._same_object(observed, owned_identity):
                     os.unlink(path)
             except BaseException:
                 pass
+    if failure is not None:
+        raise _scrub_report_error(failure)
+    return result
 
 
 def _remove_owned_temp(path: Optional[Path], identity) -> None:
@@ -264,6 +298,7 @@ def _finalize_report(
     existing_identity = None
     existing_bytes = None
     target_path = None
+    failure = None
     try:
         if type(markdown) is not str:
             raise ReportFinalizationError()
@@ -328,7 +363,11 @@ def _finalize_report(
         ):
             raise ReportFinalizationError()
         _snapshot._assert_restrictive(target_path, False)
-    except BaseException:
+    except BaseException as error:
+        failure = (
+            error if type(error) is ReportFinalizationError
+            else ReportFinalizationError()
+        )
         if replaced and target_path is not None:
             try:
                 if not _snapshot._same_object(
@@ -354,7 +393,8 @@ def _finalize_report(
             except BaseException:
                 pass
         _remove_owned_temp(temporary, temporary_identity)
-        raise _scrub_report_error()
+    if failure is not None:
+        raise _scrub_report_error(failure)
 
 
 def _risk_level(

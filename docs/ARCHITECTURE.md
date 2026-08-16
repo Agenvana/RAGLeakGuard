@@ -39,8 +39,9 @@ iterator or scan session.
 
 For `scan`, legacy `--path` is rejected before source access. The only active route requires
 `--snapshot`, `--work-parent`, a narrow pseudonymous `--source-id`, and explicit offline/complete
-acknowledgement. Locale syntax, detector runtime, exact ChromaDB 1.5.9, and platform/Python gates
-also precede source access. The filesystem gate is then revalidated on the WP7B work copy.
+acknowledgement. Locale syntax, detector runtime, strict work-parent validation, and the exact
+ChromaDB 1.5.9 platform/Python/native-filesystem gate also precede source access. The same exact
+environment tuple is revalidated on the actual WP7B work copy before enumeration.
 
 For `monitor`, source/path and locale usage validation is followed by existing webhook configuration,
 monitor-key, state, and scope authentication. A valid pending alert retains WP6 precedence and is

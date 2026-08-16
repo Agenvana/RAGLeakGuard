@@ -1,7 +1,9 @@
 """WP7D public operator-snapshot activation and finalization regressions."""
 from __future__ import annotations
 
+import builtins
 import dataclasses
+import errno
 import hashlib
 import importlib.metadata
 import os
@@ -37,6 +39,68 @@ RAW_CANARIES = (
     "dependency-exception-canary",
     "secret-token-canary",
 )
+
+
+def _exception_graph(error):
+    pending = [error]
+    seen = set()
+    nodes = []
+    surfaces = []
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        nodes.append(current)
+        surfaces.extend(
+            (
+                f"{type(current).__module__}.{type(current).__qualname__}",
+                str(current),
+                repr(current),
+                repr(current.args),
+                repr(getattr(current, "filename", None)),
+                repr(getattr(current, "filename2", None)),
+                "".join(
+                    traceback.format_exception(
+                        type(current), current, current.__traceback__
+                    )
+                ),
+            )
+        )
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+        nested = getattr(current, "exceptions", ())
+        if type(nested) is tuple:
+            pending.extend(nested)
+    return nodes, "\n".join(surfaces)
+
+
+def _assert_chain_free_static_error(error, expected_type, *canaries):
+    nodes, surfaces = _exception_graph(error)
+    assert type(error) is expected_type
+    assert nodes == [error]
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert error.__suppress_context__ is True
+    assert not any(isinstance(node, OSError) for node in nodes)
+    assert not any(
+        isinstance(node, importlib.metadata.PackageNotFoundError) for node in nodes
+    )
+    for canary in canaries:
+        assert str(canary) not in surfaces
+
+
+class _VersionInfo(tuple):
+    def __new__(cls, major, minor):
+        return super().__new__(cls, (major, minor, 0, "final", 0))
+
+    major = property(lambda self: self[0])
+    minor = property(lambda self: self[1])
+    micro = property(lambda self: self[2])
+    releaselevel = property(lambda self: self[3])
+    serial = property(lambda self: self[4])
 
 
 def _detector_aggregate(**overrides):
@@ -131,7 +195,7 @@ def test_every_public_preflight_gate_fails_before_snapshot_preparation(
     )
     monkeypatch.setattr(connectors, "validate_detection_runtime", lambda locale: locale)
     monkeypatch.setattr(
-        connectors._chroma_snapshot, "_public_activation_gate", lambda: "1.5.9"
+        connectors._chroma_snapshot, "_public_activation_gate", lambda path: "1.5.9"
     )
     kwargs = {
         "source_id": "source-1",
@@ -161,7 +225,7 @@ def test_every_public_preflight_gate_fails_before_snapshot_preparation(
         monkeypatch.setattr(
             connectors._chroma_snapshot,
             "_public_activation_gate",
-            lambda: (_ for _ in ()).throw(chroma_private._ChromaScanError()),
+            lambda path: (_ for _ in ()).throw(chroma_private._ChromaScanError()),
         )
 
     expected = connectors.InvalidChromaSnapshotRequest if stage in {
@@ -246,7 +310,7 @@ def _successful_public_preflight(monkeypatch):
     monkeypatch.setattr(connectors, "normalize_locale", lambda locale: locale)
     monkeypatch.setattr(connectors, "validate_detection_runtime", lambda locale: locale)
     monkeypatch.setattr(
-        connectors._chroma_snapshot, "_public_activation_gate", lambda: "1.5.9"
+        connectors._chroma_snapshot, "_public_activation_gate", lambda path: "1.5.9"
     )
 
 
@@ -532,6 +596,131 @@ def test_duplicate_worker_aggregate_key_is_rejected_during_frame_decode():
         )
 
 
+@pytest.mark.parametrize(
+    "failure",
+    ["locked-target", "missing-parent", "temp-create", "existing-read", "clock"],
+)
+def test_report_failure_exception_graph_drops_paths_and_underlying_os_errors(
+    tmp_path, monkeypatch, failure
+):
+    parent = tmp_path / ("missing-parent" if failure == "missing-parent" else "reports")
+    if failure != "missing-parent":
+        parent.mkdir()
+    target = parent / REPORT_PATH_CANARY
+    existing = failure in {"locked-target", "temp-create", "existing-read"}
+    if existing:
+        target.write_bytes(b"existing-report-sentinel")
+        before = target.read_bytes()
+    else:
+        before = None
+
+    exception_text = "operator-exception-text-canary"
+    secondary_path = tmp_path / "secondary-filename-canary"
+    if failure == "locked-target":
+        monkeypatch.setattr(
+            reporting.os,
+            "replace",
+            lambda *args: (_ for _ in ()).throw(
+                PermissionError(
+                    errno.EACCES,
+                    exception_text,
+                    str(target),
+                    None,
+                    str(secondary_path),
+                )
+            ),
+        )
+    elif failure == "temp-create":
+        real_open = reporting.os.open
+
+        def fail_temp_open(path, *args, **kwargs):
+            if Path(path).name.startswith(reporting._REPORT_TEMP_PREFIX):
+                raise PermissionError(errno.EACCES, exception_text, str(path))
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr(reporting.os, "open", fail_temp_open)
+    elif failure == "existing-read":
+        monkeypatch.setattr(
+            reporting.os,
+            "read",
+            lambda *args: (_ for _ in ()).throw(
+                OSError(errno.EIO, exception_text, str(target))
+            ),
+        )
+    elif failure == "clock":
+        monkeypatch.setattr(
+            reporting.time,
+            "monotonic",
+            lambda: (_ for _ in ()).throw(
+                OSError(errno.EIO, exception_text, str(target))
+            ),
+        )
+
+    clock = reporting.time.monotonic if failure == "clock" else (lambda: 0.0)
+    with pytest.raises(reporting.ReportFinalizationError) as caught:
+        reporting._finalize_report("replacement", target, clock=clock)
+
+    _assert_chain_free_static_error(
+        caught.value,
+        reporting.ReportFinalizationError,
+        target,
+        parent,
+        secondary_path,
+        exception_text,
+        REPORT_PATH_CANARY,
+    )
+    if existing:
+        assert target.read_bytes() == before
+    else:
+        assert not target.exists()
+    if parent.exists():
+        assert not list(parent.glob(".rlg-report-*.tmp"))
+
+
+@pytest.mark.skipif(
+    not hasattr(builtins, "ExceptionGroup"),
+    reason="nested exception groups require Python 3.11 or newer",
+)
+def test_report_failure_scrubs_nested_exception_groups(monkeypatch, tmp_path):
+    target = tmp_path / REPORT_PATH_CANARY
+    leaf = OSError(
+        errno.EIO,
+        "nested-exception-text-canary",
+        str(target),
+    )
+    nested = builtins.ExceptionGroup(
+        "outer-exception-group-canary",
+        [
+            builtins.ExceptionGroup("inner-exception-group-canary", [leaf]),
+            PermissionError(
+                errno.EACCES,
+                "nested-permission-canary",
+                str(tmp_path / "secondary-exception-group-path-canary"),
+            ),
+        ],
+    )
+
+    def fail_with_group(*args):
+        raise reporting.ReportFinalizationError() from nested
+
+    monkeypatch.setattr(reporting, "_write_all", fail_with_group)
+    with pytest.raises(reporting.ReportFinalizationError) as caught:
+        reporting._finalize_report("replacement", target, clock=lambda: 0.0)
+
+    _assert_chain_free_static_error(
+        caught.value,
+        reporting.ReportFinalizationError,
+        target,
+        "nested-exception-text-canary",
+        "outer-exception-group-canary",
+        "inner-exception-group-canary",
+        "nested-permission-canary",
+        "secondary-exception-group-path-canary",
+    )
+    assert not target.exists()
+    assert not list(tmp_path.glob(".rlg-report-*.tmp"))
+
+
 def test_report_finalization_is_atomic_restrictive_bounded_and_path_free(tmp_path):
     target = tmp_path / REPORT_PATH_CANARY
     reporting._finalize_report("synthetic report", target)
@@ -795,26 +984,178 @@ def test_numeric_contract_is_exact_and_narrower_than_wp7c():
     assert chroma_private._AUTOMATIC_RETRIES == 0
 
 
-def test_public_activation_gate_accepts_only_exact_159_on_five_tuples(monkeypatch):
-    monkeypatch.setattr(chroma_private.importlib.metadata, "version", lambda name: "1.5.9")
+def _patch_activation_tuple(monkeypatch, system, python, machine, filesystem):
+    monkeypatch.setattr(
+        chroma_private.importlib.metadata, "version", lambda name: "1.5.9"
+    )
+    monkeypatch.setattr(chroma_private.platform, "system", lambda: system)
+    monkeypatch.setattr(chroma_private.platform, "machine", lambda: machine)
+    monkeypatch.setattr(chroma_private.platform, "mac_ver", lambda: ("15.0", (), ()))
+    monkeypatch.setattr(
+        chroma_private.sys,
+        "version_info",
+        _VersionInfo(*python),
+    )
+    monkeypatch.setattr(
+        chroma_private, "_filesystem_type", lambda path: filesystem
+    )
+
+
+@pytest.mark.parametrize(
+    "system,python,machine,filesystem",
+    [
+        ("Linux", (3, 10), "x86_64", "ext4"),
+        ("Linux", (3, 11), "amd64", "ext4"),
+        ("Linux", (3, 12), "x86_64", "ext4"),
+        ("Darwin", (3, 12), "arm64", "apfs"),
+        ("Windows", (3, 12), "AMD64", "ntfs"),
+    ],
+)
+def test_public_activation_gate_accepts_only_exact_159_on_five_tuples(
+    monkeypatch, tmp_path, system, python, machine, filesystem
+):
+    _patch_activation_tuple(monkeypatch, system, python, machine, filesystem)
     allowed = {
         ("Linux", (3, 10)), ("Linux", (3, 11)), ("Linux", (3, 12)),
         ("Darwin", (3, 12)), ("Windows", (3, 12)),
     }
     assert chroma_private._PUBLIC_ACTIVATION_ENVIRONMENTS == allowed
+    assert chroma_private._public_activation_gate(tmp_path) == "1.5.9"
 
 
 @pytest.mark.parametrize("version", ["1.5.0", "1.5.8", "1.5.10", "1.5.9rc1", "malformed"])
-def test_public_activation_rejects_every_non_159_version(monkeypatch, version):
+def test_public_activation_rejects_every_non_159_version(
+    monkeypatch, tmp_path, version
+):
     monkeypatch.setattr(chroma_private.importlib.metadata, "version", lambda name: version)
     with pytest.raises(chroma_private._ChromaScanError):
-        chroma_private._public_activation_gate()
+        chroma_private._public_activation_gate(tmp_path)
+
+
+def test_public_dependency_gate_drops_complete_dependency_exception_graph(
+    monkeypatch, tmp_path
+):
+    work = tmp_path / WORK_PATH_CANARY
+    work.mkdir()
+    prepared = []
+    monkeypatch.setattr(connectors, "normalize_locale", lambda locale: locale)
+    monkeypatch.setattr(connectors, "validate_detection_runtime", lambda locale: locale)
+
+    def missing_dependency(name):
+        raise importlib.metadata.PackageNotFoundError(
+            "dependency-exception-canary"
+        )
+
+    monkeypatch.setattr(
+        chroma_private.importlib.metadata, "version", missing_dependency
+    )
+    monkeypatch.setattr(
+        connectors._snapshot,
+        "_prepare_snapshot",
+        lambda *args, **kwargs: prepared.append((args, kwargs)),
+    )
+
+    with pytest.raises(connectors.ChromaSnapshotUnavailableError) as caught:
+        connectors.scan_chroma_snapshot(
+            SOURCE_PATH_CANARY,
+            work,
+            source_id="source-1",
+            acknowledge_offline_complete_snapshot=True,
+        )
+
+    _assert_chain_free_static_error(
+        caught.value,
+        connectors.ChromaSnapshotUnavailableError,
+        SOURCE_PATH_CANARY,
+        work,
+        "dependency-exception-canary",
+    )
+    assert prepared == []
+
+
+@pytest.mark.parametrize("filesystem", ["btrfs", "tmpfs", "exfat"])
+def test_unsupported_work_parent_filesystem_fails_before_any_snapshot_access(
+    monkeypatch, tmp_path, capsys, filesystem
+):
+    work = tmp_path / WORK_PATH_CANARY
+    work.mkdir()
+    source_events = []
+    prepared = []
+    gate_events = []
+
+    class SnapshotProbe:
+        def __fspath__(self):
+            source_events.append("fspath")
+            raise AssertionError(SOURCE_PATH_CANARY)
+
+        def __str__(self):
+            source_events.append("str")
+            raise AssertionError(SOURCE_PATH_CANARY)
+
+    _patch_activation_tuple(
+        monkeypatch, "Windows", (3, 12), "AMD64", filesystem
+    )
+    real_strict_directory_path = chroma_private._snapshot._strict_directory_path
+
+    def strict_work_parent(value):
+        gate_events.append("strict-work-parent")
+        return real_strict_directory_path(value)
+
+    monkeypatch.setattr(
+        chroma_private._snapshot,
+        "_strict_directory_path",
+        strict_work_parent,
+    )
+    monkeypatch.setattr(
+        chroma_private,
+        "_filesystem_type",
+        lambda path: gate_events.append("filesystem") or filesystem,
+    )
+    monkeypatch.setattr(
+        chroma_private.importlib.metadata,
+        "version",
+        lambda name: gate_events.append("version") or "1.5.9",
+    )
+    monkeypatch.setattr(connectors, "normalize_locale", lambda locale: locale)
+    monkeypatch.setattr(connectors, "validate_detection_runtime", lambda locale: locale)
+
+    def prepare_must_not_run(*args, **kwargs):
+        prepared.append((args, kwargs))
+        raise AssertionError("snapshot-preparation-canary")
+
+    monkeypatch.setattr(
+        connectors._snapshot, "_prepare_snapshot", prepare_must_not_run
+    )
+
+    with pytest.raises(connectors.ChromaSnapshotUnavailableError) as caught:
+        connectors.scan_chroma_snapshot(
+            SnapshotProbe(),
+            work,
+            source_id="source-1",
+            acknowledge_offline_complete_snapshot=True,
+        )
+
+    _assert_chain_free_static_error(
+        caught.value,
+        connectors.ChromaSnapshotUnavailableError,
+        SOURCE_PATH_CANARY,
+        work,
+        "snapshot-preparation-canary",
+    )
+    assert prepared == []
+    assert source_events == []
+    assert gate_events == ["strict-work-parent", "filesystem", "version"]
+    assert capsys.readouterr() == ("", "")
+    assert list(work.iterdir()) == []
+    assert {path.name for path in tmp_path.iterdir()} == {WORK_PATH_CANARY}
 
 
 def test_public_connector_rejects_private_150_candidate_before_snapshot_access(
-    monkeypatch,
+    monkeypatch, tmp_path
 ):
     prepared = []
+    work = tmp_path / WORK_PATH_CANARY
+    work.mkdir()
     monkeypatch.setattr(connectors, "normalize_locale", lambda locale: locale)
     monkeypatch.setattr(connectors, "validate_detection_runtime", lambda locale: locale)
     monkeypatch.setattr(
@@ -828,7 +1169,7 @@ def test_public_connector_rejects_private_150_candidate_before_snapshot_access(
     with pytest.raises(connectors.ChromaSnapshotUnavailableError):
         connectors.scan_chroma_snapshot(
             SOURCE_PATH_CANARY,
-            WORK_PATH_CANARY,
+            work,
             source_id="source-1",
             acknowledge_offline_complete_snapshot=True,
         )
@@ -845,9 +1186,11 @@ def test_public_connector_rejects_private_150_candidate_before_snapshot_access(
     ],
 )
 def test_every_unlisted_public_host_tuple_fails_before_snapshot_access(
-    monkeypatch, system, python, machine
+    monkeypatch, tmp_path, system, python, machine
 ):
     prepared = []
+    work = tmp_path / WORK_PATH_CANARY
+    work.mkdir()
     monkeypatch.setattr(connectors, "normalize_locale", lambda locale: locale)
     monkeypatch.setattr(connectors, "validate_detection_runtime", lambda locale: locale)
     monkeypatch.setattr(
@@ -859,7 +1202,7 @@ def test_every_unlisted_public_host_tuple_fails_before_snapshot_access(
     monkeypatch.setattr(
         chroma_private.sys,
         "version_info",
-        SimpleNamespace(major=python[0], minor=python[1]),
+        _VersionInfo(*python),
     )
     monkeypatch.setattr(
         connectors._snapshot,
@@ -869,7 +1212,7 @@ def test_every_unlisted_public_host_tuple_fails_before_snapshot_access(
     with pytest.raises(connectors.ChromaSnapshotUnavailableError):
         connectors.scan_chroma_snapshot(
             SOURCE_PATH_CANARY,
-            WORK_PATH_CANARY,
+            work,
             source_id="source-1",
             acknowledge_offline_complete_snapshot=True,
         )
@@ -982,7 +1325,7 @@ def test_activation_environment_is_exact_native_and_os_egress_denied(tmp_path):
         "Darwin": "apfs",
         "Windows": "ntfs",
     }[platform.system()]
-    assert chroma_private._public_activation_gate() == "1.5.9"
+    assert chroma_private._public_activation_gate(tmp_path) == "1.5.9"
 
 
 @_activation

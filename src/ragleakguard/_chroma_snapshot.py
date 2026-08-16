@@ -435,8 +435,10 @@ def _candidate_version() -> str:
     return raw
 
 
-def _public_activation_gate() -> str:
-    """Reject every non-WP7D dependency or host tuple before source access."""
+def _public_activation_gate(work_parent: object) -> str:
+    """Reject every non-WP7D dependency, host, or filesystem tuple pre-source."""
+    validated_work_parent, _ = _snapshot._strict_directory_path(work_parent)
+    filesystem = _filesystem_type(validated_work_parent)
     version = _candidate_version()
     system = platform.system()
     python = (sys.version_info.major, sys.version_info.minor)
@@ -455,6 +457,7 @@ def _public_activation_gate() -> str:
                 raise _ChromaScanError()
         except (ValueError, IndexError):
             raise _ChromaScanError() from None
+    _validate_environment(version, filesystem)
     return version
 
 
@@ -533,10 +536,14 @@ def _filesystem_type(path: Path) -> str:
     raise _ChromaScanError()
 
 
-def _environment_gate(version: str, path: Path) -> Tuple[str, Tuple[int, int], str]:
+def _validate_environment(
+    version: str,
+    filesystem: str,
+) -> Tuple[str, Tuple[int, int], str]:
     system = platform.system()
     python = (sys.version_info.major, sys.version_info.minor)
-    filesystem = _filesystem_type(path)
+    if type(filesystem) is not str:
+        raise _ChromaScanError()
     machine = platform.machine().lower()
     if (version, system, python, filesystem) not in _EFFECT_ALLOWLIST:
         raise _ChromaScanError()
@@ -553,6 +560,10 @@ def _environment_gate(version: str, path: Path) -> Tuple[str, Tuple[int, int], s
         except (ValueError, IndexError):
             raise _ChromaScanError() from None
     return system, python, filesystem
+
+
+def _environment_gate(version: str, path: Path) -> Tuple[str, Tuple[int, int], str]:
+    return _validate_environment(version, _filesystem_type(path))
 
 
 def _regular_file(path: Path, root_device: int) -> _snapshot._Identity:
