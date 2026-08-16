@@ -206,12 +206,16 @@ WP7D matrix. Only the final job, which depends on every matrix, can emit the
 `ready-for-independent-review` manifest. That status is not publication authorization.
 
 The separate `publish-pypi.yml` workflow is `workflow_dispatch` only and contains no build command.
-It downloads artifacts from a named candidate run, checks an exact annotated `v0.1.1` tag and commit,
-revalidates the version and SHA-256 hashes twice, and refuses to reach its publication job unless a
-pre-existing `pypi` environment has required reviewers. Only that final environment-gated job has
-`id-token: write`; no username, password, API token, TestPyPI target, or stored publication secret is
-defined. External PyPI Trusted Publishing remains a separate maintainer-controlled boundary and is
-not configured by WP8.
+It accepts dispatch only from the exact reviewed
+`Agenvana/RAGLeakGuard/.github/workflows/publish-pypi.yml@refs/tags/v0.1.1` workflow ref, downloads
+artifacts from a validated positive candidate run ID, checks the annotated tag and commit, and
+revalidates the version and SHA-256 hashes twice. Its pre-existing `pypi` environment must prevent
+self-review and allow exactly the `v0.1.1` tag through a tag-only deployment policy, so a modified
+workflow on an arbitrary branch cannot reach the environment. Only the final environment-gated job
+has `id-token: write`; no username, password, API token, TestPyPI target, or stored publication
+secret is defined. The external Trusted Publisher tuple is exactly repository
+`Agenvana/RAGLeakGuard`, workflow `publish-pypi.yml`, environment `pypi`; it remains a separate
+maintainer-controlled boundary and is not configured by WP8.
 
 ## Trust boundaries
 

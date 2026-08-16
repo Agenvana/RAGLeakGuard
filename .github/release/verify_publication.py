@@ -42,8 +42,24 @@ def main() -> int:
     parser.add_argument("--candidate-run-id", required=True)
     parser.add_argument("--repository", required=True)
     parser.add_argument("--server-url", required=True)
+    parser.add_argument("--workflow-ref", required=True)
+    parser.add_argument("--workflow-sha", required=True)
     parser.add_argument("--policy-dir", type=Path, default=Path(".github/release"))
     args = parser.parse_args()
+
+    policy = json.loads(
+        (args.policy_dir / "release-policy.json").read_text(encoding="utf-8")
+    )
+    publication = policy.get("publication")
+    if not isinstance(publication, dict):
+        raise RuntimeError("publication policy is absent")
+    trusted_publisher = publication.get("trusted_publisher")
+    if trusted_publisher != {
+        "repository": "Agenvana/RAGLeakGuard",
+        "workflow": "publish-pypi.yml",
+        "environment": "pypi",
+    }:
+        raise RuntimeError("trusted publisher tuple differs")
 
     if not re.fullmatch(r"[0-9a-f]{40}", args.expected_commit):
         raise RuntimeError("expected commit must be a full lowercase SHA-1")
@@ -53,6 +69,20 @@ def main() -> int:
         raise RuntimeError("wheel hash must be a full lowercase SHA-256")
     if not re.fullmatch(r"[0-9a-f]{64}", args.sdist_sha256):
         raise RuntimeError("sdist hash must be a full lowercase SHA-256")
+    if not re.fullmatch(r"[1-9][0-9]*", args.candidate_run_id):
+        raise RuntimeError("candidate run ID must be a positive decimal integer")
+    if args.repository != trusted_publisher["repository"]:
+        raise RuntimeError("publication repository differs")
+    if args.server_url != "https://github.com":
+        raise RuntimeError("publication server differs")
+    expected_workflow_ref = (
+        f"{args.repository}/{publication['workflow_path']}"
+        f"@{publication['workflow_ref']}"
+    )
+    if args.workflow_ref != expected_workflow_ref:
+        raise RuntimeError("publication workflow ref differs")
+    if args.workflow_sha != args.expected_commit:
+        raise RuntimeError("publication workflow commit differs")
     if _git("rev-parse", "HEAD") != args.expected_commit:
         raise RuntimeError("checked-out commit differs")
     tag_ref = f"refs/tags/{args.expected_tag}"
@@ -75,8 +105,6 @@ def main() -> int:
             raise RuntimeError("candidate evidence commit differs")
     if gate.get("publication_authorized") is not False:
         raise RuntimeError("candidate evidence publication field differs")
-    if not args.candidate_run_id.isascii() or not args.candidate_run_id.isdigit():
-        raise RuntimeError("candidate run ID is malformed")
     expected_run = f"{args.server_url}/{args.repository}/actions/runs/{args.candidate_run_id}"
     if gate.get("candidate_run") != expected_run:
         raise RuntimeError("gate evidence belongs to a different workflow run")

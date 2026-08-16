@@ -24,8 +24,10 @@ Repository and release-system facts for the unpublished WP8 source state:
   forbidden material and privacy canaries, tests wheel and sdist outside repository imports, runs
   the base/WP7C/WP7D matrices, and produces artifact SHA-256 hashes plus build and review manifests.
 - `publish-pypi.yml` is `workflow_dispatch` only, never rebuilds, and validates a named candidate
-  run, annotated tag, commit, version, hashes, evidence, and an existing protected `pypi`
-  environment. Only its final job has `id-token: write`.
+  run, annotated tag, commit, version, hashes, evidence, exact workflow identity, and an existing
+  protected `pypi` environment. Dispatch must select `refs/tags/v0.1.1`; `github.sha`,
+  `github.workflow_sha`, the annotated tag target, and the reviewed commit must be identical.
+  Only its final job has `id-token: write`.
 - WP8 does not configure the protected environment or the external PyPI Trusted Publisher. It does
   not tag, release, publish, yank, or alter PyPI/TestPyPI state.
 
@@ -56,6 +58,10 @@ exact workflow run succeeded.
 - An independent reviewer checks security-sensitive changes, version consistency, supported-scope claims, test evidence, artifacts, and provenance.
 - A human maintainer approves the exact commit and performs or explicitly authorizes publication.
 - The author/preparer does not self-approve a security-critical release. Agents do not merge, publish, or create a release without explicit authorization.
+- The protected environment must set `prevent_self_review: true`. If only one qualified maintainer
+  exists, that maintainer cannot both dispatch and approve the deployment; publication remains
+  blocked until a second eligible reviewer is available. Do not weaken the environment to work
+  around that limitation.
 
 ## Release gates
 
@@ -131,9 +137,11 @@ Findings require human triage; zero pattern matches are not a guarantee.
 - Present the commit SHA, version, matrix results, artifact hashes, provenance, changelog, limitations, and rollback plan to the maintainer.
 - Require an explicit human approval for the exact artifacts.
 - After separate authorization, a human maintainer may create the exact annotated `v0.1.1` tag and
-  GitHub release for the approved commit. The dormant workflow can then publish only the same
-  reviewed wheel/sdist bytes through the protected `pypi` environment and preconfigured PyPI OIDC
-  Trusted Publisher.
+  GitHub release for the approved commit. The dormant workflow must be dispatched at that tag, so
+  its exact secure workflow ref is
+  `Agenvana/RAGLeakGuard/.github/workflows/publish-pypi.yml@refs/tags/v0.1.1`. It can then publish
+  only the same reviewed wheel/sdist bytes through the protected `pypi` environment and
+  preconfigured PyPI OIDC Trusted Publisher.
 - Verify the public hashes, metadata, install, import version, and CLI smoke test after publication.
 - Record publisher, approval, time, URLs, and verification result in the release evidence.
 
@@ -160,9 +168,30 @@ until a human maintainer authorizes and completes publication of the exact revie
 ## Automation boundary
 
 The candidate workflow has `contents: read` only and no credential or OIDC permission. The manual
-publication workflow does not build and cannot reach its OIDC job unless validation succeeds first.
-Referencing an environment in YAML is not sufficient protection, so the validation job queries the
-existing `pypi` environment and requires a reviewer rule before the environment-gated job can start.
-External PyPI Trusted Publishing is deliberately not configured by repository code; absent trust
-causes OIDC publication to fail. Human maintainers own environment protection, external trust, tag,
-release, publication, yank, rollback, and merge decisions.
+publication workflow does not build. Its first step validates every dispatch input from environment
+variables before checkout or artifact download and emits only validated outputs. The workflow run
+must originate from the exact `v0.1.1` tag and reviewed commit; an arbitrary branch workflow ref is
+rejected.
+
+Referencing an environment in YAML is not sufficient protection. Before the OIDC job can start, the
+validation job requires all of this existing administrative state:
+
+- environment name exactly `pypi`, with required reviewers and `prevent_self_review: true`;
+- selected-branches-and-tags deployment policy (`protected_branches: false`,
+  `custom_branch_policies: true`);
+- exactly one deployment policy, of type `tag`, named exactly `v0.1.1`, with no branch policy.
+
+The tag-only deployment policy is independently enforced by GitHub before the environment job and
+prevents a modified publication workflow dispatched from an arbitrary branch from reaching `pypi`.
+The exact PyPI Trusted Publisher tuple that a maintainer would configure only after separate
+authorization is:
+
+```text
+repository: Agenvana/RAGLeakGuard
+workflow: publish-pypi.yml
+environment: pypi
+```
+
+WP8 does not create that environment, those protection rules, the tag, or the external trusted
+publisher. Absent any one of them, publication remains blocked. Human maintainers own environment
+protection, external trust, tag, release, publication, yank, rollback, and merge decisions.

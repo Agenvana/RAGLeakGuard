@@ -7,8 +7,10 @@ import os
 import re
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
+import pytest
 import ragleakguard
 
 
@@ -34,6 +36,55 @@ def _workflow(name):
 
 def _action_refs(workflow):
     return re.findall(r"^\s*uses:\s*([^\s#]+)", workflow, re.MULTILINE)
+
+
+def _run_scripts(workflow):
+    lines = workflow.splitlines()
+    scripts = []
+    for index, line in enumerate(lines):
+        match = re.match(r"^(\s*)run:\s*(.*)$", line)
+        if match is None:
+            continue
+        indent = len(match.group(1))
+        block = [match.group(2)]
+        for following in lines[index + 1 :]:
+            if following.strip() and len(following) - len(following.lstrip()) <= indent:
+                break
+            block.append(following)
+        scripts.append("\n".join(block))
+    return scripts
+
+
+def _dispatch_validator_code():
+    workflow = _workflow("publish-pypi.yml")
+    marker = "          python - <<'PY'\n"
+    start = workflow.index(marker) + len(marker)
+    end = workflow.index("\n          PY", start)
+    return textwrap.dedent(workflow[start:end])
+
+
+def _valid_dispatch_environment(output):
+    commit = "a" * 40
+    return {
+        **os.environ,
+        "GITHUB_OUTPUT": str(output),
+        "RLG_INPUT_CANDIDATE_RUN_ID": "123",
+        "RLG_INPUT_EXPECTED_COMMIT": commit,
+        "RLG_INPUT_EXPECTED_TAG": "v0.1.1",
+        "RLG_INPUT_EXPECTED_VERSION": "0.1.1",
+        "RLG_INPUT_WHEEL_SHA256": "b" * 64,
+        "RLG_INPUT_SDIST_SHA256": "c" * 64,
+        "RLG_INPUT_CONFIRMATION": "publish-reviewed-0.1.1-artifacts",
+        "RLG_EVENT_NAME": "workflow_dispatch",
+        "RLG_REPOSITORY": "Agenvana/RAGLeakGuard",
+        "RLG_REF": "refs/tags/v0.1.1",
+        "RLG_SHA": commit,
+        "RLG_WORKFLOW_REF": (
+            "Agenvana/RAGLeakGuard/.github/workflows/"
+            "publish-pypi.yml@refs/tags/v0.1.1"
+        ),
+        "RLG_WORKFLOW_SHA": commit,
+    }
 
 
 def test_hatch_runtime_policy_notes_and_package_metadata_share_version():
@@ -112,6 +163,21 @@ def test_finite_base_wp7c_and_unchanged_wp7d_matrices_are_exact():
     assert wp7c == expected_wp7c and len(POLICY["wp7c_matrix"]) == 10
     assert wp7d == expected_wp7d and len(POLICY["wp7d_matrix"]) == 5
     assert POLICY["actions"] == EXPECTED_ACTIONS
+    assert POLICY["publication"] == {
+        "trusted_publisher": {
+            "repository": "Agenvana/RAGLeakGuard",
+            "workflow": "publish-pypi.yml",
+            "environment": "pypi",
+        },
+        "workflow_ref": "refs/tags/v0.1.1",
+        "workflow_path": ".github/workflows/publish-pypi.yml",
+        "deployment_branch_policy": {
+            "protected_branches": False,
+            "custom_branch_policies": True,
+            "required_policy": {"name": "v0.1.1", "type": "tag"},
+        },
+        "prevent_self_review": True,
+    }
 
 
 def test_candidate_workflow_is_build_once_artifact_only_and_nonpublishing():
@@ -173,6 +239,14 @@ def test_publication_workflow_is_manual_no_rebuild_and_oidc_isolated():
     assert "pip install" not in workflow
     assert "verify_publication.py" in validation
     assert "verify_environment.py" in validation
+    assert "deployment-branch-policies" in validation
+    assert "refs/tags/v0.1.1" in validation
+    assert (
+        "Agenvana/RAGLeakGuard/.github/workflows/"
+        "publish-pypi.yml@refs/tags/v0.1.1"
+    ) in validation
+    assert workflow.index("Validate dispatch inputs") < workflow.index("actions/checkout@")
+    assert workflow.index("Validate dispatch inputs") < workflow.index("download-artifact@")
     assert "environment:\n      name: pypi" in publish
     assert "id-token: write" not in validation
     assert publish.count("id-token: write") == 1
@@ -182,6 +256,92 @@ def test_publication_workflow_is_manual_no_rebuild_and_oidc_isolated():
     assert "skip-existing: false" in publish
     assert "pypa/gh-action-pypi-publish@" + EXPECTED_ACTIONS["pypi_publish"] in publish
     assert refs and all(re.search(r"@[0-9a-f]{40}$", ref) for ref in refs)
+
+
+def test_dispatch_inputs_are_never_interpolated_into_run_scripts():
+    workflow = _workflow("publish-pypi.yml")
+    for script in _run_scripts(workflow):
+        assert "${{ inputs." not in script
+    input_lines = [line for line in workflow.splitlines() if "${{ inputs." in line]
+    assert len(input_lines) == 7
+    assert all(
+        re.fullmatch(
+            r"\s+RLG_INPUT_[A-Z0-9_]+: \$\{\{ inputs\.[a-z0-9_]+ \}\}",
+            line,
+        )
+        for line in input_lines
+    )
+    after_validation = workflow.split(
+        "      - name: Check out the exact reviewed commit and tags", 1
+    )[1]
+    assert "${{ inputs." not in after_validation
+    assert "needs.validate-reviewed-artifacts.outputs" in workflow
+
+
+def test_dispatch_validator_accepts_only_exact_safe_values(tmp_path):
+    output = tmp_path / "outputs.txt"
+    result = subprocess.run(
+        [sys.executable, "-c", _dispatch_validator_code()],
+        cwd=tmp_path,
+        env=_valid_dispatch_environment(output),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert output.read_text(encoding="utf-8").splitlines() == [
+        "candidate_run_id=123",
+        f"expected_commit={'a' * 40}",
+        "expected_tag=v0.1.1",
+        "expected_version=0.1.1",
+        f"wheel_sha256={'b' * 64}",
+        f"sdist_sha256={'c' * 64}",
+        "workflow_ref=refs/tags/v0.1.1",
+        f"workflow_sha={'a' * 40}",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "malicious"),
+    (
+        (
+            "RLG_INPUT_CONFIRMATION",
+            "publish-reviewed-0.1.1-artifacts; touch rlg-injection-canary",
+        ),
+        ("RLG_INPUT_EXPECTED_VERSION", "0.1.1$(touch rlg-injection-canary)"),
+        ("RLG_INPUT_EXPECTED_TAG", "v0.1.1; touch rlg-injection-canary"),
+        ("RLG_INPUT_EXPECTED_COMMIT", "a" * 39 + ";"),
+        ("RLG_INPUT_EXPECTED_COMMIT", "A" * 40),
+        ("RLG_INPUT_WHEEL_SHA256", "b" * 63 + ";"),
+        ("RLG_INPUT_SDIST_SHA256", "$(touch rlg-injection-canary)"),
+        ("RLG_INPUT_CANDIDATE_RUN_ID", "1; touch rlg-injection-canary"),
+        ("RLG_INPUT_CANDIDATE_RUN_ID", "0"),
+        ("RLG_INPUT_CANDIDATE_RUN_ID", "-1"),
+        ("RLG_INPUT_CANDIDATE_RUN_ID", "01"),
+        ("RLG_INPUT_CANDIDATE_RUN_ID", "not-a-run"),
+        ("RLG_REF", "refs/heads/arbitrary-branch"),
+        ("RLG_WORKFLOW_SHA", "d" * 40),
+    ),
+)
+def test_dispatch_validator_rejects_malformed_or_injectable_values(
+    tmp_path, field, malicious
+):
+    output = tmp_path / "outputs.txt"
+    environment = _valid_dispatch_environment(output)
+    environment[field] = malicious
+    result = subprocess.run(
+        [sys.executable, "-c", _dispatch_validator_code()],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode != 0
+    assert not (tmp_path / "rlg-injection-canary").exists()
+    assert not output.exists() or output.read_text(encoding="utf-8") == ""
 
 
 def test_archive_policy_is_allowlisted_and_scans_recursive_canaries():
@@ -274,41 +434,138 @@ def test_incomplete_build_evidence_cannot_emit_candidate_success(tmp_path):
     assert not output.exists()
 
 
-def test_publication_environment_must_preexist_with_required_reviewers(tmp_path):
+def _run_environment_verifier(tmp_path, environment, branch_policies):
     response = tmp_path / "environment.json"
-    verifier = ROOT / ".github" / "release" / "verify_environment.py"
-    response.write_text(
-        json.dumps({"name": "pypi", "protection_rules": []}), encoding="utf-8"
-    )
-    rejected = subprocess.run(
-        [sys.executable, str(verifier), "--response", str(response)],
+    policies = tmp_path / "branch-policies.json"
+    response.write_text(json.dumps(environment), encoding="utf-8")
+    policies.write_text(json.dumps(branch_policies), encoding="utf-8")
+    return subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / ".github" / "release" / "verify_environment.py"),
+            "--response",
+            str(response),
+            "--branch-policies",
+            str(policies),
+        ],
+        cwd=ROOT,
         capture_output=True,
         text=True,
         timeout=30,
     )
+
+
+def _valid_environment_evidence():
+    return {
+        "name": "pypi",
+        "protection_rules": [
+            {
+                "type": "required_reviewers",
+                "prevent_self_review": True,
+                "reviewers": [
+                    {"type": "User", "reviewer": {"id": 1, "login": "reviewer"}}
+                ],
+            },
+            {"type": "branch_policy"},
+        ],
+        "deployment_branch_policy": {
+            "protected_branches": False,
+            "custom_branch_policies": True,
+        },
+    }, {
+        "total_count": 1,
+        "branch_policies": [{"name": "v0.1.1", "type": "tag"}],
+    }
+
+
+def test_publication_environment_requires_exact_tag_and_reviewer_separation(tmp_path):
+    environment, policies = _valid_environment_evidence()
+    accepted = _run_environment_verifier(tmp_path, environment, policies)
+    assert accepted.returncode == 0, accepted.stderr
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "no-reviewers",
+        "self-review",
+        "no-branch-rule",
+        "protected-branches",
+        "arbitrary-branch",
+        "extra-policy",
+        "missing-policy-type",
+    ),
+)
+def test_publication_environment_rejects_incomplete_or_branch_policy(
+    tmp_path, mutation
+):
+    environment, policies = _valid_environment_evidence()
+    if mutation == "no-reviewers":
+        environment["protection_rules"][0]["reviewers"] = []
+    elif mutation == "self-review":
+        environment["protection_rules"][0]["prevent_self_review"] = False
+    elif mutation == "no-branch-rule":
+        environment["protection_rules"].pop()
+    elif mutation == "protected-branches":
+        environment["deployment_branch_policy"] = {
+            "protected_branches": True,
+            "custom_branch_policies": False,
+        }
+    elif mutation == "arbitrary-branch":
+        policies["branch_policies"][0] = {"name": "*", "type": "branch"}
+    elif mutation == "extra-policy":
+        policies["total_count"] = 2
+        policies["branch_policies"].append({"name": "main", "type": "branch"})
+    else:
+        policies["branch_policies"][0].pop("type")
+
+    rejected = _run_environment_verifier(tmp_path, environment, policies)
     assert rejected.returncode != 0
 
-    response.write_text(
-        json.dumps(
-            {
-                "name": "pypi",
-                "protection_rules": [
-                    {
-                        "type": "required_reviewers",
-                        "reviewers": [{"type": "User", "reviewer": {"id": 1}}],
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
+
+def test_canonical_release_notes_state_exact_corrective_upgrade_warnings():
+    notes = (ROOT / "docs" / "releases" / "0.1.1.md").read_text(
+        encoding="utf-8"
     )
-    accepted = subprocess.run(
-        [sys.executable, str(verifier), "--response", str(response)],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert accepted.returncode == 0
+    normalized = " ".join(notes.split())
+    for wording in (
+        "Python 3.13+ does not match `0.1.1`",
+        "the unsafe `0.1.0` metadata may still match Python 3.13+ until that release is yanked",
+        "Users on Python 3.13+ must not assume `pip install -U ragleakguard` installed the corrective version",
+        "`pip install -U ragleakguard` installed the corrective version",
+        "They must verify the installed version",
+        "There is no supported corrective Chroma path on Python 3.13+",
+        "The old `chroma` extra was replaced by `chroma-snapshot`",
+        "Using the old extra does not install the required exact ChromaDB 1.5.9 dependency",
+        "Legacy `--path` is rejected",
+        "The bounded operator-snapshot invocation requires",
+    ):
+        assert wording in normalized
+    for option in (
+        "--snapshot",
+        "--work-parent",
+        "--source-id",
+        "--acknowledge-offline-complete-snapshot",
+        "--report",
+    ):
+        assert option in notes
+
+
+def test_release_process_defines_exact_publication_trust_contract():
+    process = (ROOT / "docs" / "RELEASE_PROCESS.md").read_text(encoding="utf-8")
+    normalized = " ".join(process.split())
+    for wording in (
+        "Agenvana/RAGLeakGuard/.github/workflows/publish-pypi.yml@refs/tags/v0.1.1",
+        "`protected_branches: false`",
+        "`custom_branch_policies: true`",
+        "`prevent_self_review: true`",
+        "prevents a modified publication workflow dispatched from an arbitrary branch",
+        "repository: Agenvana/RAGLeakGuard",
+        "workflow: publish-pypi.yml",
+        "environment: pypi",
+        "publication remains blocked until a second eligible reviewer is available",
+    ):
+        assert wording in normalized
 
 
 def test_canonical_claim_surfaces_distinguish_proposed_and_published_versions():
