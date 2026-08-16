@@ -4,20 +4,30 @@ RAGLeakGuard releases require explicit human approval. CI, an agent, or a merged
 
 ## Current baseline
 
-Repository and release-system facts carried forward from the WP7B review record and updated for the
-unreleased WP7D source implementation:
+Repository and release-system facts for the unpublished WP8 source state:
 
 - PyPI reports `ragleakguard` version `0.1.0` and Python `>=3.9`.
-- `pyproject.toml` declares version `0.1.0`, while `ragleakguard.__version__` is `0.0.1`. This mismatch must be resolved before the next release; this documentation-only change does not alter either value.
+- Source proposes corrective version `0.1.1`. Hatch reads
+  `src/ragleakguard/__init__.py` as the single authoritative version source; executable tests require
+  equality with project policy, wheel/sdist metadata, and the canonical release notes.
 - GitHub has no repository release or Git tag.
-- CI runs the suite for pull requests and pushes to `main` on ext4/Python 3.9, APFS/Python 3.9,
-  NTFS/Python 3.9, and NTFS/Python 3.12. This is the finite WP7B evidence matrix, not a documented
-  supported release matrix.
+- The proposed base/`detect` artifact matrix is CPython 3.9–3.12 on Ubuntu 24.04/ext4, macOS
+  15/APFS, and Windows Server 2025/NTFS. Package metadata is finite at `>=3.9,<3.13`.
 - WP7D adds five mandatory exact ChromaDB 1.5.9 cells: Linux/ext4 Python 3.10–3.12, macOS 15/APFS
-  Python 3.12, and Windows/NTFS Python 3.12. These are source-commit activation evidence, not a
-  published package support claim.
-- CI installs ranged dependencies and downloads `en_core_web_sm`; inputs are not fully locked.
-- There is no package-build, artifact-install, provenance, checksum, secret/dependency-scan, or PyPI publication workflow in this repository.
+  Python 3.12, and Windows/NTFS Python 3.12. WP8 does not widen those cells. WP7C retains the
+  existing private ten-cell 1.5.0/1.5.9 evidence matrix.
+- Build-only wheels and their hashes, GitHub Actions, runner labels, the builder Python, direct test
+  inputs, and the spaCy model asset SHA-256 are pinned for the candidate workflow. Transitive runtime
+  dependencies are still resolved per environment and recorded with `pip list`; they are not fully
+  locked and remain a residual supply-chain risk.
+- `release-candidate.yml` builds once and never publishes. It checks metadata/archive contents,
+  forbidden material and privacy canaries, tests wheel and sdist outside repository imports, runs
+  the base/WP7C/WP7D matrices, and produces artifact SHA-256 hashes plus build and review manifests.
+- `publish-pypi.yml` is `workflow_dispatch` only, never rebuilds, and validates a named candidate
+  run, annotated tag, commit, version, hashes, evidence, and an existing protected `pypi`
+  environment. Only its final job has `id-token: write`.
+- WP8 does not configure the protected environment or the external PyPI Trusted Publisher. It does
+  not tag, release, publish, yank, or alter PyPI/TestPyPI state.
 
 WP7A corrective status from approved baseline
 `e9fdbbe456386b052f35de2c180901275aa6747c`:
@@ -36,7 +46,9 @@ WP7B review and merge record:
   create a complete, quiescent/full-filesystem snapshot; RAGLeakGuard does not prove provenance,
   quiescence, completeness, or atomic consistency. No corrective release has been published.
 
-Do not describe the current workflow as a reproducible release pipeline.
+Do not describe candidate evidence as a reproducible-build guarantee, production-safety evidence,
+or publication authorization. `ready-for-independent-review` means only that every named gate in one
+exact workflow run succeeded.
 
 ## Roles and separation
 
@@ -71,9 +83,10 @@ All applicable gates must pass on the exact release commit.
 
 - Use one authoritative version and assert equality across package metadata, runtime `__version__`, built wheel/sdist metadata, CLI output if exposed, tag, and release notes.
 - Document schema/state and CLI-exit migrations. Provide an explicit upgrade path or fail closed on incompatible persisted state.
-- Define the finite supported Python/platform matrix before release. The current WP7B CI jobs are
-  evidence for their exact Python/filesystem environments only. The five WP7D cells likewise prove
-  only the immutable source head and are not a published release matrix.
+- Keep the finite base package matrix at the twelve cells in
+  [the canonical 0.1.1 notes](releases/0.1.1.md). The five WP7D cells prove only exact ChromaDB
+  1.5.9 behavior for the immutable source/artifact evidence; they do not widen the base matrix or
+  activate other Chroma versions.
 
 ### 4. Tests and documentation
 
@@ -84,11 +97,11 @@ All applicable gates must pass on the exact release commit.
 
 ### 5. Build and install
 
-The following is a target release check and is **planned** until automation and locked inputs are added:
+The non-publishing candidate workflow automates the following checks with exact build inputs:
 
 ```bash
-python -m build
-python -m twine check dist/*
+python -m build --no-isolation --sdist --wheel --outdir dist
+python .github/release/verify_candidate.py ...
 ```
 
 - Build wheel and sdist once from the reviewed commit in a clean environment.
@@ -101,15 +114,26 @@ python -m twine check dist/*
   complete operator snapshot, cleanup, and aggregate report finalization.
 - Generate SHA-256 checksums and provenance for the final artifacts. Do not rebuild after approval; publish the reviewed bytes.
 
+The build manifest is created only after archive and metadata checks pass. The separate review
+manifest is created only after both artifact-install jobs and every base, WP7C, and WP7D matrix job
+passes. Neither manifest is a success signal for publication.
+
 ### 6. Supply chain
 
-Secret scanning, dependency/vulnerability review, locked release inputs, provenance attestations, and verified artifact installation are **planned release requirements**. A future workflow must pin actions and prevent publication when a required check fails. Findings require human triage; a scanner's zero findings are not a guarantee.
+WP8 implements full-SHA action pins, hash-pinned build tools, exact direct test constraints, archive
+credential/privacy pattern checks, resolved-input logs, verified artifact installation, artifact
+hashes, and fail-closed candidate manifests. Full transitive locks, hermetic/reproducible builds,
+independent malware/vulnerability scanning, and externally verifiable provenance remain planned.
+Findings require human triage; zero pattern matches are not a guarantee.
 
 ### 7. Approval and publication
 
 - Present the commit SHA, version, matrix results, artifact hashes, provenance, changelog, limitations, and rollback plan to the maintainer.
 - Require an explicit human approval for the exact artifacts.
-- Create the version tag and GitHub release from the approved commit, then publish those same wheel/sdist bytes to PyPI using the narrowest project-scoped credentials or trusted publishing available.
+- After separate authorization, a human maintainer may create the exact annotated `v0.1.1` tag and
+  GitHub release for the approved commit. The dormant workflow can then publish only the same
+  reviewed wheel/sdist bytes through the protected `pypi` environment and preconfigured PyPI OIDC
+  Trusted Publisher.
 - Verify the public hashes, metadata, install, import version, and CLI smoke test after publication.
 - Record publisher, approval, time, URLs, and verification result in the release evidence.
 
@@ -129,10 +153,16 @@ scans are disabled; Issue #15 was deferred, not completed; ChromaDB 1.5.0 and 1.
 mutation; only exact 1.5.9 operator snapshots on the five reviewed tuples are activated; the
 operator must create a complete quiescent/full-filesystem snapshot; provenance, quiescence,
 completeness, and atomic consistency are not proved; detection is best-effort; and PyPI 0.1.0 must
-not be used for Chroma scanning. This repository has no unreleased release-note mechanism, so do not
-invent a version or changelog file; carry proposed wording in the reviewed pull request until a
-human authorizes release preparation.
+not be used for Chroma scanning. The canonical proposed wording is
+[0.1.1 corrective release notes](releases/0.1.1.md). Its `proposed; not published` status must remain
+until a human maintainer authorizes and completes publication of the exact reviewed bytes.
 
-## Planned automation
+## Automation boundary
 
-A future release workflow should encode the gates above with least-privilege permissions, protected environments, pinned actions, locked inputs, full supported-matrix tests, build-once artifacts, provenance/checksums, dry-run installation, and human approval before publication. Adding that workflow is not part of this documentation baseline.
+The candidate workflow has `contents: read` only and no credential or OIDC permission. The manual
+publication workflow does not build and cannot reach its OIDC job unless validation succeeds first.
+Referencing an environment in YAML is not sufficient protection, so the validation job queries the
+existing `pypi` environment and requires a reviewer rule before the environment-gated job can start.
+External PyPI Trusted Publishing is deliberately not configured by repository code; absent trust
+causes OIDC publication to fail. Human maintainers own environment protection, external trust, tag,
+release, publication, yank, rollback, and merge decisions.

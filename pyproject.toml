@@ -1,9 +1,9 @@
 [project]
 name = "ragleakguard"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Security toolkit with bounded operator-snapshot Chroma detection."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.9,<3.13"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Belle Chang" }]
 keywords = ["llm", "rag", "vector-database", "security", "pii", "privacy", "ai-security"]
@@ -12,9 +12,14 @@ classifiers = [
   "Intended Audience :: Developers",
   "Intended Audience :: Information Technology",
   "License :: OSI Approved :: Apache Software License",
-  "Operating System :: OS Independent",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
   "Topic :: Security",
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
@@ -34,13 +39,17 @@ dev = ["pytest>=8", "faker>=25"]
 Homepage = "https://github.com/Agenvana/RAGLeakGuard"
 Repository = "https://github.com/Agenvana/RAGLeakGuard"
 Issues = "https://github.com/Agenvana/RAGLeakGuard/issues"
+Changelog = "https://github.com/Agenvana/RAGLeakGuard/blob/main/docs/releases/0.1.1.md"
 
 [project.scripts]
 ragleakguard = "ragleakguard.cli:app"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/ragleakguard/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ragleakguard"]
@@ -50,7 +59,8 @@ include = [
   "/src/ragleakguard",
   "/README.md",
   "/README.zh-TW.md",
+  "/SECURITY.md",
   "/LICENSE",
   "/pyproject.toml",
+  "/docs/releases/0.1.1.md",
 ]
-exclude = ["/.gitignore"]

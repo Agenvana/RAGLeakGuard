@@ -1,0 +1,725 @@
+name: Corrective release candidate (non-publishing)
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full reviewed commit SHA to build without publication
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: corrective-candidate-${{ github.event.pull_request.head.sha || inputs.source_sha }}
+  cancel-in-progress: false
+
+env:
+  EXPECTED_VERSION: "0.1.1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  policy:
+    name: Validate exact source and finite matrices
+    runs-on: ubuntu-24.04
+    outputs:
+      source_sha: ${{ steps.policy.outputs.source_sha }}
+      base_matrix: ${{ steps.policy.outputs.base_matrix }}
+      wp7c_matrix: ${{ steps.policy.outputs.wp7c_matrix }}
+      wp7d_matrix: ${{ steps.policy.outputs.wp7d_matrix }}
+      builder_python: ${{ steps.policy.outputs.builder_python }}
+      spacy_model_url: ${{ steps.policy.outputs.spacy_model_url }}
+      spacy_model_sha256: ${{ steps.policy.outputs.spacy_model_sha256 }}
+      spacy_model_size: ${{ steps.policy.outputs.spacy_model_size }}
+    steps:
+      - name: Check out the exact requested commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || inputs.source_sha }}
+          persist-credentials: false
+
+      - name: Set up policy reader
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.13"
+
+      - name: Validate policy and expose immutable inputs
+        id: policy
+        env:
+          REQUESTED_SHA: ${{ github.event.pull_request.head.sha || inputs.source_sha }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          requested = os.environ["REQUESTED_SHA"]
+          observed = subprocess.run(
+              ["git", "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+          ).stdout.strip()
+          if not re.fullmatch(r"[0-9a-f]{40}", requested) or requested != observed:
+              raise SystemExit("A full exact source SHA is required.")
+          policy = json.loads(Path(".github/release/release-policy.json").read_text())
+          if policy["schema"] != 1 or policy["proposed_version"] != "0.1.1":
+              raise SystemExit("Release policy version differs.")
+          if policy["python_requires"] != ">=3.9,<3.13":
+              raise SystemExit("Python policy differs.")
+          if policy["builder"] != {"os": "ubuntu-24.04", "python": "3.12.13"}:
+              raise SystemExit("Builder policy differs.")
+          expected_model = {
+              "name": "en_core_web_sm",
+              "version": "3.7.1",
+              "url": (
+                  "https://github.com/explosion/spacy-models/releases/download/"
+                  "en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl"
+              ),
+              "sha256": "86cc141f63942d4b2c5fcee06630fd6f904788d2f0ab005cce45aadb8fb73889",
+              "size": 12803381,
+          }
+          if policy["spacy_model"] != expected_model:
+              raise SystemExit("spaCy model policy differs.")
+          if len(policy["base_matrix"]) != 12 or len(policy["wp7c_matrix"]) != 10:
+              raise SystemExit("Base or WP7C matrix differs.")
+          expected_wp7d = {
+              ("ubuntu-24.04", "Linux-ext4", "3.10", "1.5.9"),
+              ("ubuntu-24.04", "Linux-ext4", "3.11", "1.5.9"),
+              ("ubuntu-24.04", "Linux-ext4", "3.12", "1.5.9"),
+              ("macos-15", "macOS15-APFS", "3.12", "1.5.9"),
+              ("windows-2025", "Windows-NTFS", "3.12", "1.5.9"),
+          }
+          observed_wp7d = {
+              (row["os"], row["platform"], row["python"], row["chroma"])
+              for row in policy["wp7d_matrix"]
+          }
+          if observed_wp7d != expected_wp7d:
+              raise SystemExit("WP7D's exact five-cell matrix differs.")
+          expected_actions = {
+              "checkout": "11d5960a326750d5838078e36cf38b85af677262",
+              "setup_python": "a26af69be951a213d495a4c3e4e4022e16d87065",
+              "upload_artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+              "download_artifact": "d3f86a106a0bac45b974a628896c90dbdf5c8093",
+              "pypi_publish": "dc37677b2e1c63e2034f94d8a5b11f265b73ba33",
+          }
+          if policy["actions"] != expected_actions:
+              raise SystemExit("Pinned action policy differs.")
+          outputs = {
+              "source_sha": observed,
+              "base_matrix": json.dumps(policy["base_matrix"], separators=(",", ":")),
+              "wp7c_matrix": json.dumps(policy["wp7c_matrix"], separators=(",", ":")),
+              "wp7d_matrix": json.dumps(policy["wp7d_matrix"], separators=(",", ":")),
+              "builder_python": policy["builder"]["python"],
+              "spacy_model_url": policy["spacy_model"]["url"],
+              "spacy_model_sha256": policy["spacy_model"]["sha256"],
+              "spacy_model_size": str(policy["spacy_model"]["size"]),
+          }
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              for key, value in outputs.items():
+                  handle.write(f"{key}={value}\n")
+          PY
+
+  build-candidate:
+    name: Build wheel and sdist once
+    needs: policy
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact source without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.policy.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Set up exact builder Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ needs.policy.outputs.builder_python }}
+
+      - name: Install hash-pinned build-only inputs
+        run: >-
+          python -m pip install --only-binary=:all: --require-hashes
+          -r .github/release/build-requirements.txt
+
+      - name: Build once from the exact commit
+        env:
+          RLG_SOURCE_SHA: ${{ needs.policy.outputs.source_sha }}
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${RLG_SOURCE_SHA}"
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+          echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" >> "${GITHUB_ENV}"
+          python -m build --no-isolation --sdist --wheel --outdir dist
+
+      - name: Inspect metadata, archives, forbidden material, and privacy canaries
+        env:
+          RLG_SOURCE_SHA: ${{ needs.policy.outputs.source_sha }}
+        run: >-
+          python .github/release/verify_candidate.py
+          --dist dist
+          --expected-version "${{ env.EXPECTED_VERSION }}"
+          --source-sha "${{ needs.policy.outputs.source_sha }}"
+          --policy .github/release/release-policy.json
+          --output evidence/build-evidence.json
+
+      - name: Confirm source checkout was not changed
+        shell: bash
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Upload exact candidate distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-candidate-dist
+          path: dist/
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 14
+
+      - name: Upload build evidence manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-candidate-build-evidence
+          path: evidence/build-evidence.json
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 14
+
+  artifact-install:
+    name: Install and test ${{ matrix.artifact }} artifact
+    needs: [policy, build-candidate]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        artifact: [wheel, sdist]
+    steps:
+      - name: Check out test and verification sources only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.policy.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Download the build-once distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-dist
+          path: dist
+
+      - name: Install the selected artifact and exact direct test inputs
+        shell: bash
+        env:
+          ARTIFACT_KIND: ${{ matrix.artifact }}
+          SPACY_MODEL_URL: ${{ needs.policy.outputs.spacy_model_url }}
+          SPACY_MODEL_SHA256: ${{ needs.policy.outputs.spacy_model_sha256 }}
+          SPACY_MODEL_SIZE: ${{ needs.policy.outputs.spacy_model_size }}
+        run: |
+          python -m pip install "pip==25.2"
+          if [ "${ARTIFACT_KIND}" = wheel ]; then
+            artifact="dist/ragleakguard-0.1.1-py3-none-any.whl"
+          else
+            artifact="dist/ragleakguard-0.1.1.tar.gz"
+          fi
+          python -m pip install -c .github/release/test-constraints.txt "${artifact}[detect,dev]"
+          python .github/release/install_spacy_model.py --url "${SPACY_MODEL_URL}" --sha256 "${SPACY_MODEL_SHA256}" --size "${SPACY_MODEL_SIZE}" --destination "${RUNNER_TEMP}/en_core_web_sm-3.7.1-py3-none-any.whl"
+          python -m pip check
+          python -m pip list --format=freeze --disable-pip-version-check
+
+      - name: Verify installed artifact outside the repository
+        working-directory: ${{ runner.temp }}
+        run: >-
+          python "${{ github.workspace }}/.github/release/verify_installed.py"
+          --expected-version "${{ env.EXPECTED_VERSION }}"
+          --expected-python "3.12"
+          --workspace "${{ github.workspace }}"
+
+      - name: Run complete tests against the installed artifact
+        working-directory: ${{ runner.temp }}
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+        run: python -m pytest "${{ github.workspace }}/tests" -q --basetemp "${{ runner.temp }}/rlg-artifact-${{ matrix.artifact }}"
+
+  base-artifact-matrix:
+    name: Base artifact / ${{ matrix.platform }} / Python ${{ matrix.python }}
+    needs: [policy, build-candidate]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.policy.outputs.base_matrix) }}
+    steps:
+      - name: Check out exact tests
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.policy.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Set up exact Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Download the build-once wheel
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-dist
+          path: dist
+
+      - name: Install wheel and exact direct base evidence inputs
+        env:
+          SPACY_MODEL_URL: ${{ needs.policy.outputs.spacy_model_url }}
+          SPACY_MODEL_SHA256: ${{ needs.policy.outputs.spacy_model_sha256 }}
+          SPACY_MODEL_SIZE: ${{ needs.policy.outputs.spacy_model_size }}
+        run: |
+          python -m pip install "pip==25.2"
+          python -m pip install -c .github/release/test-constraints.txt "dist/ragleakguard-0.1.1-py3-none-any.whl[detect,dev]"
+          python .github/release/install_spacy_model.py --url "${{ needs.policy.outputs.spacy_model_url }}" --sha256 "${{ needs.policy.outputs.spacy_model_sha256 }}" --size "${{ needs.policy.outputs.spacy_model_size }}" --destination "${{ runner.temp }}/en_core_web_sm-3.7.1-py3-none-any.whl"
+          python -m pip check
+          python -m pip list --format=freeze --disable-pip-version-check
+
+      - name: Prepare native ext4 test volume
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          truncate -s 1G "${RUNNER_TEMP}/rlg-wp8-base-ext4.img"
+          mkfs.ext4 -q -F "${RUNNER_TEMP}/rlg-wp8-base-ext4.img"
+          sudo mkdir -p /mnt/rlg-wp8-base-ext4
+          sudo mount -o loop "${RUNNER_TEMP}/rlg-wp8-base-ext4.img" /mnt/rlg-wp8-base-ext4
+          sudo chown "$(id -u):$(id -g)" /mnt/rlg-wp8-base-ext4
+          test "$(findmnt -n -o FSTYPE /mnt/rlg-wp8-base-ext4)" = ext4
+
+      - name: Assert native APFS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          test "$(sw_vers -productVersion | cut -d. -f1)" = 15
+          device="$(df "${RUNNER_TEMP}" | awk 'END {print $1}')"
+          diskutil info "${device}" | grep -Eiq 'File System Personality:.*APFS'
+
+      - name: Assert native NTFS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $drive = [IO.Path]::GetPathRoot($env:RUNNER_TEMP).Substring(0, 1)
+          if ((Get-Volume -DriveLetter $drive).FileSystem -ne 'NTFS') { throw 'Required NTFS evidence is absent.' }
+
+      - name: Verify installed wheel import
+        working-directory: ${{ runner.temp }}
+        run: >-
+          python "${{ github.workspace }}/.github/release/verify_installed.py"
+          --expected-version "${{ env.EXPECTED_VERSION }}"
+          --expected-python "${{ matrix.python }}"
+          --workspace "${{ github.workspace }}"
+
+      - name: Run base suite on native ext4
+        if: runner.os == 'Linux'
+        working-directory: ${{ runner.temp }}
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          TMPDIR: /mnt/rlg-wp8-base-ext4
+        run: python -m pytest "${{ github.workspace }}/tests" -q --basetemp /mnt/rlg-wp8-base-ext4/pytest
+
+      - name: Run base suite on native APFS or NTFS
+        if: runner.os != 'Linux'
+        working-directory: ${{ runner.temp }}
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+        run: python -m pytest "${{ github.workspace }}/tests" -q --basetemp "${{ runner.temp }}/rlg-wp8-base-pytest"
+
+      - name: Unmount native ext4 test volume
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo umount /mnt/rlg-wp8-base-ext4 || true
+          sudo rmdir /mnt/rlg-wp8-base-ext4 || true
+          rm -f "${RUNNER_TEMP}/rlg-wp8-base-ext4.img"
+
+  wp7c-artifact-matrix:
+    name: WP7C artifact / ${{ matrix.platform }} / Python ${{ matrix.python }} / Chroma ${{ matrix.chroma }}
+    needs: [policy, build-candidate]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.policy.outputs.wp7c_matrix) }}
+    steps:
+      - name: Check out exact evidence sources
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.policy.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Set up exact Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Download the build-once wheel
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-dist
+          path: dist
+
+      - name: Install wheel, exact private candidate, and evidence inputs
+        run: |
+          python -m pip install "pip==25.2"
+          python -m pip install -c .github/release/test-constraints.txt "dist/ragleakguard-0.1.1-py3-none-any.whl[detect,dev]" "chromadb==${{ matrix.chroma }}"
+          python .github/release/install_spacy_model.py --url "${{ needs.policy.outputs.spacy_model_url }}" --sha256 "${{ needs.policy.outputs.spacy_model_sha256 }}" --size "${{ needs.policy.outputs.spacy_model_size }}" --destination "${{ runner.temp }}/en_core_web_sm-3.7.1-py3-none-any.whl"
+          python -m pip check
+          python -m pip list --format=freeze --disable-pip-version-check
+
+      - name: Verify installed wheel and exact candidate
+        working-directory: ${{ runner.temp }}
+        run: >-
+          python "${{ github.workspace }}/.github/release/verify_installed.py"
+          --expected-version "${{ env.EXPECTED_VERSION }}"
+          --expected-python "${{ matrix.python }}"
+          --expected-chroma "${{ matrix.chroma }}"
+          --workspace "${{ github.workspace }}"
+
+      - name: Prepare explicitly mounted native ext4 volume
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin rlgwp8c
+          test_uid="$(id -u rlgwp8c)"
+          test "${test_uid}" != "$(id -u)"
+          echo "RLG_WP8C_TEST_UID=${test_uid}" >> "${GITHUB_ENV}"
+          truncate -s 2G "${RUNNER_TEMP}/rlg-wp8c-ext4.img"
+          mkfs.ext4 -q -F "${RUNNER_TEMP}/rlg-wp8c-ext4.img"
+          sudo mkdir -p /mnt/rlg-wp8c-ext4
+          sudo mount -o loop "${RUNNER_TEMP}/rlg-wp8c-ext4.img" /mnt/rlg-wp8c-ext4
+          sudo mkdir /mnt/rlg-wp8c-ext4/home
+          sudo mkdir /mnt/rlg-wp8c-ext4/repository
+          git archive --format=tar HEAD | sudo tar -xf - -C /mnt/rlg-wp8c-ext4/repository
+          sudo chown -R rlgwp8c:rlgwp8c /mnt/rlg-wp8c-ext4
+          test "$(findmnt -n -o FSTYPE /mnt/rlg-wp8c-ext4)" = ext4
+
+      - name: Assert native APFS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          test "$(sw_vers -productVersion | cut -d. -f1)" = 15
+          device="$(df "${RUNNER_TEMP}" | awk 'END {print $1}')"
+          diskutil info "${device}" | grep -Eiq 'File System Personality:.*APFS'
+
+      - name: Assert native NTFS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $drive = [IO.Path]::GetPathRoot($env:RUNNER_TEMP).Substring(0, 1)
+          if ((Get-Volume -DriveLetter $drive).FileSystem -ne 'NTFS') { throw 'Required NTFS evidence is absent.' }
+
+      - name: Deny outbound traffic for the Linux evidence identity
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo iptables -I OUTPUT 1 -m owner --uid-owner "${RLG_WP8C_TEST_UID}" -j REJECT
+          sudo iptables -I OUTPUT 1 -o lo -j ACCEPT
+          sudo iptables -C OUTPUT -o lo -j ACCEPT
+          sudo iptables -C OUTPUT -m owner --uid-owner "${RLG_WP8C_TEST_UID}" -j REJECT
+
+      - name: Deny outbound traffic for the Windows Python worker
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $rule = "RLG-WP8C-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT-${{ matrix.chroma }}"
+          $python = (Get-Command python).Source
+          New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $python -Action Block -Profile Any | Out-Null
+          if ((Get-NetFirewallRule -DisplayName $rule).Action.ToString() -ne 'Block') { throw 'Outbound denial is absent.' }
+          "RLG_WP8C_FIREWALL_RULE=$rule" >> $env:GITHUB_ENV
+
+      - name: Run focused and complete WP7C evidence on ext4
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7C_OS_EGRESS_DENIED: "1"
+          TMPDIR: /mnt/rlg-wp8c-ext4
+        run: |
+          python_path="$(command -v python)"
+          cd /mnt/rlg-wp8c-ext4/repository
+          sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7C_OS_EGRESS_DENIED,TMPDIR -u rlgwp8c env HOME=/mnt/rlg-wp8c-ext4/home "${python_path}" .github/release/verify_installed.py --expected-version 0.1.1 --expected-python "${{ matrix.python }}" --expected-chroma "${{ matrix.chroma }}" --workspace /mnt/rlg-wp8c-ext4/repository
+          sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7C_OS_EGRESS_DENIED,TMPDIR -u rlgwp8c env HOME=/mnt/rlg-wp8c-ext4/home "${python_path}" -m pytest tests/test_chroma_snapshot_private.py -q --basetemp /mnt/rlg-wp8c-ext4/focused
+          sudo --preserve-env=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7C_OS_EGRESS_DENIED,TMPDIR -u rlgwp8c env HOME=/mnt/rlg-wp8c-ext4/home "${python_path}" -m pytest -q --basetemp /mnt/rlg-wp8c-ext4/complete
+
+      - name: Run focused and complete WP7C evidence on APFS
+        if: runner.os == 'macOS'
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7C_OS_EGRESS_DENIED: "1"
+        run: |
+          sandbox-exec -p '(version 1) (allow default) (deny network*)' python "${GITHUB_WORKSPACE}/.github/release/verify_installed.py" --expected-version 0.1.1 --expected-python "${{ matrix.python }}" --expected-chroma "${{ matrix.chroma }}" --workspace "${GITHUB_WORKSPACE}"
+          sandbox-exec -p '(version 1) (allow default) (deny network*)' python -m pytest "${GITHUB_WORKSPACE}/tests/test_chroma_snapshot_private.py" -q --basetemp "${RUNNER_TEMP}/rlg-wp8c-focused"
+          sandbox-exec -p '(version 1) (allow default) (deny network*)' python -m pytest "${GITHUB_WORKSPACE}/tests" -q --basetemp "${RUNNER_TEMP}/rlg-wp8c-complete"
+
+      - name: Run focused and complete WP7C evidence on NTFS
+        if: runner.os == 'Windows'
+        working-directory: ${{ runner.temp }}
+        shell: pwsh
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7C_OS_EGRESS_DENIED: "1"
+        run: |
+          python "$env:GITHUB_WORKSPACE/.github/release/verify_installed.py" --expected-version 0.1.1 --expected-python "${{ matrix.python }}" --expected-chroma "${{ matrix.chroma }}" --workspace "$env:GITHUB_WORKSPACE"
+          python -m pytest "$env:GITHUB_WORKSPACE/tests/test_chroma_snapshot_private.py" -q --basetemp "$env:RUNNER_TEMP/rlg-wp8c-focused"
+          python -m pytest "$env:GITHUB_WORKSPACE/tests" -q --basetemp "$env:RUNNER_TEMP/rlg-wp8c-complete"
+
+      - name: Remove Windows outbound-denial rule
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ($env:RLG_WP8C_FIREWALL_RULE) { Remove-NetFirewallRule -DisplayName $env:RLG_WP8C_FIREWALL_RULE }
+
+      - name: Remove Linux outbound-denial rule and ext4 volume
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo iptables -D OUTPUT -o lo -j ACCEPT || true
+          if [ -n "${RLG_WP8C_TEST_UID:-}" ]; then sudo iptables -D OUTPUT -m owner --uid-owner "${RLG_WP8C_TEST_UID}" -j REJECT || true; fi
+          sudo umount /mnt/rlg-wp8c-ext4 || true
+          sudo rmdir /mnt/rlg-wp8c-ext4 || true
+          rm -f "${RUNNER_TEMP}/rlg-wp8c-ext4.img"
+          sudo userdel rlgwp8c || true
+
+  wp7d-artifact-matrix:
+    name: WP7D artifact / ${{ matrix.platform }} / Python ${{ matrix.python }} / Chroma ${{ matrix.chroma }}
+    needs: [policy, build-candidate]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.policy.outputs.wp7d_matrix) }}
+    steps:
+      - name: Check out exact evidence sources
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.policy.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Set up exact Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Download the build-once wheel
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-dist
+          path: dist
+
+      - name: Install wheel, exact public candidate, and evidence inputs
+        run: |
+          python -m pip install "pip==25.2"
+          python -m pip install -c .github/release/test-constraints.txt "dist/ragleakguard-0.1.1-py3-none-any.whl[chroma-snapshot,detect,dev]" "chromadb==1.5.9"
+          python .github/release/install_spacy_model.py --url "${{ needs.policy.outputs.spacy_model_url }}" --sha256 "${{ needs.policy.outputs.spacy_model_sha256 }}" --size "${{ needs.policy.outputs.spacy_model_size }}" --destination "${{ runner.temp }}/en_core_web_sm-3.7.1-py3-none-any.whl"
+          python -m pip check
+          python -m pip list --format=freeze --disable-pip-version-check
+
+      - name: Verify installed wheel and exact public candidate
+        working-directory: ${{ runner.temp }}
+        run: >-
+          python "${{ github.workspace }}/.github/release/verify_installed.py"
+          --expected-version "${{ env.EXPECTED_VERSION }}"
+          --expected-python "${{ matrix.python }}"
+          --expected-chroma "1.5.9"
+          --workspace "${{ github.workspace }}"
+
+      - name: Prepare explicitly mounted native ext4 volume
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin rlgwp8d
+          test_uid="$(id -u rlgwp8d)"
+          test "${test_uid}" != "$(id -u)"
+          echo "RLG_WP8D_TEST_UID=${test_uid}" >> "${GITHUB_ENV}"
+          truncate -s 2G "${RUNNER_TEMP}/rlg-wp8d-ext4.img"
+          mkfs.ext4 -q -F "${RUNNER_TEMP}/rlg-wp8d-ext4.img"
+          sudo mkdir -p /mnt/rlg-wp8d-ext4
+          sudo mount -o loop "${RUNNER_TEMP}/rlg-wp8d-ext4.img" /mnt/rlg-wp8d-ext4
+          sudo mkdir /mnt/rlg-wp8d-ext4/home
+          sudo mkdir /mnt/rlg-wp8d-ext4/repository
+          git archive --format=tar HEAD | sudo tar -xf - -C /mnt/rlg-wp8d-ext4/repository
+          sudo chown -R rlgwp8d:rlgwp8d /mnt/rlg-wp8d-ext4
+          test "$(findmnt -n -o FSTYPE /mnt/rlg-wp8d-ext4)" = ext4
+
+      - name: Assert native APFS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          test "$(sw_vers -productVersion | cut -d. -f1)" = 15
+          device="$(df "${RUNNER_TEMP}" | awk 'END {print $1}')"
+          diskutil info "${device}" | grep -Eiq 'File System Personality:.*APFS'
+
+      - name: Assert native NTFS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $drive = [IO.Path]::GetPathRoot($env:RUNNER_TEMP).Substring(0, 1)
+          if ((Get-Volume -DriveLetter $drive).FileSystem -ne 'NTFS') { throw 'Required NTFS evidence is absent.' }
+
+      - name: Deny outbound traffic for the Linux evidence identity
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo iptables -I OUTPUT 1 -m owner --uid-owner "${RLG_WP8D_TEST_UID}" -j REJECT
+          sudo iptables -I OUTPUT 1 -o lo -j ACCEPT
+          sudo iptables -C OUTPUT -o lo -j ACCEPT
+          sudo iptables -C OUTPUT -m owner --uid-owner "${RLG_WP8D_TEST_UID}" -j REJECT
+
+      - name: Deny outbound traffic for the Windows Python worker
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $rule = "RLG-WP8D-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $python = (Get-Command python).Source
+          New-NetFirewallRule -DisplayName $rule -Direction Outbound -Program $python -Action Block -Profile Any | Out-Null
+          if ((Get-NetFirewallRule -DisplayName $rule).Action.ToString() -ne 'Block') { throw 'Outbound denial is absent.' }
+          "RLG_WP8D_FIREWALL_RULE=$rule" >> $env:GITHUB_ENV
+
+      - name: Run focused and complete WP7D evidence on ext4
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7C_OS_EGRESS_DENIED: "1"
+          RLG_WP7D_ACTIVATION: "1"
+          RLG_WP7D_MANDATORY: "1"
+          RLG_WP7D_OS_EGRESS_DENIED: "1"
+          TMPDIR: /mnt/rlg-wp8d-ext4
+        run: |
+          python_path="$(command -v python)"
+          cd /mnt/rlg-wp8d-ext4/repository
+          preserved=ANONYMIZED_TELEMETRY,PYTHONWARNINGS,RLG_REQUIRE_NATIVE_SNAPSHOT_FS,RLG_WP7C_COMPATIBILITY,RLG_WP7C_OS_EGRESS_DENIED,RLG_WP7D_ACTIVATION,RLG_WP7D_MANDATORY,RLG_WP7D_OS_EGRESS_DENIED,TMPDIR
+          sudo --preserve-env="${preserved}" -u rlgwp8d env HOME=/mnt/rlg-wp8d-ext4/home "${python_path}" .github/release/verify_installed.py --expected-version 0.1.1 --expected-python "${{ matrix.python }}" --expected-chroma 1.5.9 --workspace /mnt/rlg-wp8d-ext4/repository
+          sudo --preserve-env="${preserved}" -u rlgwp8d env HOME=/mnt/rlg-wp8d-ext4/home "${python_path}" -m pytest tests/test_wp7d_snapshot_activation.py tests/test_chroma_snapshot_private.py -q --basetemp /mnt/rlg-wp8d-ext4/focused
+          sudo --preserve-env="${preserved}" -u rlgwp8d env HOME=/mnt/rlg-wp8d-ext4/home "${python_path}" -m pytest -q --basetemp /mnt/rlg-wp8d-ext4/complete
+
+      - name: Run focused and complete WP7D evidence on APFS
+        if: runner.os == 'macOS'
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7C_OS_EGRESS_DENIED: "1"
+          RLG_WP7D_ACTIVATION: "1"
+          RLG_WP7D_MANDATORY: "1"
+          RLG_WP7D_OS_EGRESS_DENIED: "1"
+        run: |
+          sandbox-exec -p '(version 1) (allow default) (deny network*)' python "${GITHUB_WORKSPACE}/.github/release/verify_installed.py" --expected-version 0.1.1 --expected-python "${{ matrix.python }}" --expected-chroma 1.5.9 --workspace "${GITHUB_WORKSPACE}"
+          sandbox-exec -p '(version 1) (allow default) (deny network*)' python -m pytest "${GITHUB_WORKSPACE}/tests/test_wp7d_snapshot_activation.py" "${GITHUB_WORKSPACE}/tests/test_chroma_snapshot_private.py" -q --basetemp "${RUNNER_TEMP}/rlg-wp8d-focused"
+          sandbox-exec -p '(version 1) (allow default) (deny network*)' python -m pytest "${GITHUB_WORKSPACE}/tests" -q --basetemp "${RUNNER_TEMP}/rlg-wp8d-complete"
+
+      - name: Run focused and complete WP7D evidence on NTFS
+        if: runner.os == 'Windows'
+        working-directory: ${{ runner.temp }}
+        shell: pwsh
+        env:
+          ANONYMIZED_TELEMETRY: "False"
+          PYTHONWARNINGS: ignore
+          RLG_REQUIRE_NATIVE_SNAPSHOT_FS: "1"
+          RLG_WP7C_COMPATIBILITY: "1"
+          RLG_WP7C_OS_EGRESS_DENIED: "1"
+          RLG_WP7D_ACTIVATION: "1"
+          RLG_WP7D_MANDATORY: "1"
+          RLG_WP7D_OS_EGRESS_DENIED: "1"
+        run: |
+          python "$env:GITHUB_WORKSPACE/.github/release/verify_installed.py" --expected-version 0.1.1 --expected-python "${{ matrix.python }}" --expected-chroma 1.5.9 --workspace "$env:GITHUB_WORKSPACE"
+          python -m pytest "$env:GITHUB_WORKSPACE/tests/test_wp7d_snapshot_activation.py" "$env:GITHUB_WORKSPACE/tests/test_chroma_snapshot_private.py" -q --basetemp "$env:RUNNER_TEMP/rlg-wp8d-focused"
+          python -m pytest "$env:GITHUB_WORKSPACE/tests" -q --basetemp "$env:RUNNER_TEMP/rlg-wp8d-complete"
+
+      - name: Remove Windows outbound-denial rule
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ($env:RLG_WP8D_FIREWALL_RULE) { Remove-NetFirewallRule -DisplayName $env:RLG_WP8D_FIREWALL_RULE }
+
+      - name: Remove Linux outbound-denial rule and ext4 volume
+        if: always() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo iptables -D OUTPUT -o lo -j ACCEPT || true
+          if [ -n "${RLG_WP8D_TEST_UID:-}" ]; then sudo iptables -D OUTPUT -m owner --uid-owner "${RLG_WP8D_TEST_UID}" -j REJECT || true; fi
+          sudo umount /mnt/rlg-wp8d-ext4 || true
+          sudo rmdir /mnt/rlg-wp8d-ext4 || true
+          rm -f "${RUNNER_TEMP}/rlg-wp8d-ext4.img"
+          sudo userdel rlgwp8d || true
+
+  candidate-gate:
+    name: Emit independent-review evidence after every gate
+    needs:
+      - policy
+      - build-candidate
+      - artifact-install
+      - base-artifact-matrix
+      - wp7c-artifact-matrix
+      - wp7d-artifact-matrix
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact evidence writer
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.policy.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Set up evidence Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.13"
+
+      - name: Download verified build evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-build-evidence
+          path: evidence
+
+      - name: Write final gate evidence
+        env:
+          RLG_SOURCE_SHA: ${{ needs.policy.outputs.source_sha }}
+        run: >-
+          python .github/release/write_gate_manifest.py
+          --build-evidence evidence/build-evidence.json
+          --output evidence/release-candidate-evidence.json
+
+      - name: Upload review-only candidate evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-candidate-evidence
+          path: evidence/release-candidate-evidence.json
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 14

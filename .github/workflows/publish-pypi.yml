@@ -1,0 +1,196 @@
+name: Publish reviewed corrective artifacts to PyPI (dormant)
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful non-publishing candidate workflow run ID
+        required: true
+        type: string
+      expected_commit:
+        description: Exact reviewed 40-character commit SHA
+        required: true
+        type: string
+      expected_tag:
+        description: Exact annotated tag (must be v0.1.1)
+        required: true
+        type: string
+      expected_version:
+        description: Exact artifact version (must be 0.1.1)
+        required: true
+        default: "0.1.1"
+        type: string
+      wheel_sha256:
+        description: Reviewed wheel SHA-256
+        required: true
+        type: string
+      sdist_sha256:
+        description: Reviewed sdist SHA-256
+        required: true
+        type: string
+      confirmation:
+        description: Type publish-reviewed-0.1.1-artifacts
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: pypi-ragleakguard-0.1.1
+  cancel-in-progress: false
+
+jobs:
+  validate-reviewed-artifacts:
+    name: Validate environment, tag, commit, evidence, and hashes
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+    steps:
+      - name: Reject incomplete manual authorization
+        shell: bash
+        run: |
+          test "${{ inputs.confirmation }}" = "publish-reviewed-0.1.1-artifacts"
+          test "${{ inputs.expected_version }}" = "0.1.1"
+          test "${{ inputs.expected_tag }}" = "v0.1.1"
+
+      - name: Check out the exact reviewed commit and tags
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected_commit }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Set up validation Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.13"
+
+      - name: Download exact build-once distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-dist
+          path: dist
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+
+      - name: Download build evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-build-evidence
+          path: evidence/build
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+
+      - name: Download completed gate evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-evidence
+          path: evidence/gate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+
+      - name: Require an existing protected pypi environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/environments/pypi" > pypi-environment.json
+          python .github/release/verify_environment.py --response pypi-environment.json
+
+      - name: Validate exact reviewed bytes without rebuilding
+        run: >-
+          python .github/release/verify_publication.py
+          --dist dist
+          --build-evidence evidence/build/build-evidence.json
+          --gate-evidence evidence/gate/release-candidate-evidence.json
+          --expected-version "${{ inputs.expected_version }}"
+          --expected-commit "${{ inputs.expected_commit }}"
+          --expected-tag "${{ inputs.expected_tag }}"
+          --wheel-sha256 "${{ inputs.wheel_sha256 }}"
+          --sdist-sha256 "${{ inputs.sdist_sha256 }}"
+          --candidate-run-id "${{ inputs.candidate_run_id }}"
+          --repository "${{ github.repository }}"
+          --server-url "${{ github.server_url }}"
+
+  publish-pypi:
+    name: Publish the same reviewed bytes through OIDC
+    needs: validate-reviewed-artifacts
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/ragleakguard/
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out exact validator and reviewed commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected_commit }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Set up validation Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.13"
+
+      - name: Download the same build-once distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-dist
+          path: dist
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+
+      - name: Download the same build evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-build-evidence
+          path: evidence/build
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+
+      - name: Download the same completed gate evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-evidence
+          path: evidence/gate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+
+      - name: Revalidate exact bytes immediately before OIDC publication
+        run: >-
+          python .github/release/verify_publication.py
+          --dist dist
+          --build-evidence evidence/build/build-evidence.json
+          --gate-evidence evidence/gate/release-candidate-evidence.json
+          --expected-version "${{ inputs.expected_version }}"
+          --expected-commit "${{ inputs.expected_commit }}"
+          --expected-tag "${{ inputs.expected_tag }}"
+          --wheel-sha256 "${{ inputs.wheel_sha256 }}"
+          --sdist-sha256 "${{ inputs.sdist_sha256 }}"
+          --candidate-run-id "${{ inputs.candidate_run_id }}"
+          --repository "${{ github.repository }}"
+          --server-url "${{ github.server_url }}"
+
+      - name: Publish without rebuilding or stored credentials
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: dist/
+          attestations: true
+          print-hash: true
+          skip-existing: false
+          verbose: false
+          verify-metadata: true

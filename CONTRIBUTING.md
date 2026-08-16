@@ -10,9 +10,10 @@ Use an issue-scoped branch and keep a pull request to one objective. Roadmap ent
 
 ## Development setup
 
-The package metadata requires Python 3.9 or newer. CI validates the WP7B filesystem evidence on
-ext4/Python 3.9, APFS/Python 3.9, NTFS/Python 3.9, and NTFS/Python 3.12. Those jobs are executable
-evidence for their named environments, not a documented supported release matrix.
+The proposed `0.1.1` package metadata is finite at Python `>=3.9,<3.13`. Its base/`detect` artifact
+matrix covers CPython 3.9–3.12 on Ubuntu 24.04/ext4, macOS 15/APFS, and Windows Server 2025/NTFS.
+Those twelve cells are distinct from WP7D's exact five-cell ChromaDB 1.5.9 activation matrix. A
+passing job is evidence only for its named commit, artifact hashes, resolved inputs, and environment.
 
 ```bash
 python -m venv .venv
@@ -39,6 +40,12 @@ A pull request should include:
 - residual risks and anything not proved.
 
 Run focused tests while developing and the full available suite before requesting review. Independent review is required for the security-critical areas listed in [AGENTS.md](AGENTS.md). Authors must not approve their own security-critical change.
+
+Release-readiness changes must also run the non-publishing build-once candidate workflow, install
+both wheel and sdist without editable or repository-relative package imports, inspect both archives,
+and record the exact hashes and candidate run. The canonical proposed `0.1.1` wording lives in
+[the corrective release notes](docs/releases/0.1.1.md). Do not create a tag, release, publish, yank,
+or configure external trust as an incidental part of release preparation.
 
 ## Security and privacy rules
 

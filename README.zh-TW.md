@@ -34,6 +34,25 @@ RAGLeakGuard 不會證明快照的來源、靜止狀態、完整性或原子一�
 PyPI `0.1.0` 套件包含不安全的直接 Chroma 路徑，**不得用於 Chroma 掃描**。撤下該套件
 與發布修正版都需要人類維護者另行授權；此儲存庫變更沒有執行這些動作。
 
+## 修正版狀態
+
+`0.1.1` 是 source 中提議的修正版；尚未發布、建立 tag 或建立 GitHub release。Hatch 以
+`ragleakguard.__version__` 作為唯一版本來源。build-once 的 `release-candidate.yml` workflow
+只有唯讀 repository 權限，沒有發布 credential，也沒有 OIDC `id-token` 權限。它只從一個
+確切 commit 建立 wheel 與 sdist，檢查並計算 hash，並以實際安裝的 artifact 完成測試後，
+才會產生僅供獨立審查的 candidate evidence。
+
+提議的 base／`detect` 套件矩陣是 Ubuntu 24.04/ext4、macOS 15/APFS、Windows Server
+2025/NTFS 上的 CPython 3.9–3.12；package metadata 有明確上限 `>=3.9,<3.13`。這十二格套件
+矩陣不會擴大 Chroma 支援；公開 snapshot 啟用仍只限上述 ChromaDB 1.5.9 的五格矩陣。
+詳見 canonical [0.1.1 修正版 release notes](docs/releases/0.1.1.md) 與
+[release process](docs/RELEASE_PROCESS.md)。
+
+另一個 `publish-pypi.yml` workflow 僅能手動觸發且目前 dormant。它絕不重建 artifact，並要求
+完全相符的 annotated tag、commit、version、candidate run、artifact hash、既有且受保護的
+`pypi` environment，以及在 PyPI 外部設定的 OIDC Trusted Publishing。WP8 不會建立任何這些
+發布權限，也不會發布任何套件。
+
 ## 目前命令行為
 
 `scan --source chroma` 只接受 `--snapshot`、`--work-parent`、窄範圍的假名
