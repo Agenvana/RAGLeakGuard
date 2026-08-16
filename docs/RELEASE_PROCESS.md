@@ -177,6 +177,7 @@ Referencing an environment in YAML is not sufficient protection. Before the OIDC
 validation job requires all of this existing administrative state:
 
 - environment name exactly `pypi`, with required reviewers and `prevent_self_review: true`;
+- Allow administrators to bypass configured protection rules: disabled.
 - selected-branches-and-tags deployment policy (`protected_branches: false`,
   `custom_branch_policies: true`);
 - exactly one deployment policy, of type `tag`, named exactly `v0.1.1`, with no branch policy.

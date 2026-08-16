@@ -213,7 +213,8 @@ revalidates the version and SHA-256 hashes twice. Its pre-existing `pypi` enviro
 self-review and allow exactly the `v0.1.1` tag through a tag-only deployment policy, so a modified
 workflow on an arbitrary branch cannot reach the environment. Only the final environment-gated job
 has `id-token: write`; no username, password, API token, TestPyPI target, or stored publication
-secret is defined. The external Trusted Publisher tuple is exactly repository
+secret is defined. Allow administrators to bypass configured protection rules: disabled. The
+external Trusted Publisher tuple is exactly repository
 `Agenvana/RAGLeakGuard`, workflow `publish-pypi.yml`, environment `pypi`; it remains a separate
 maintainer-controlled boundary and is not configured by WP8.
 

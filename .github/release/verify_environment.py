@@ -35,6 +35,10 @@ def main() -> int:
     expected_environment = trusted_publisher.get("environment")
     if document.get("name") != expected_environment or expected_environment != "pypi":
         raise RuntimeError("the protected pypi environment is absent")
+    if publication.get("can_admins_bypass") is not False:
+        raise RuntimeError("publication policy permits administrator bypass")
+    if document.get("can_admins_bypass") is not False:
+        raise RuntimeError("the pypi environment permits administrator bypass")
     rules = document.get("protection_rules")
     if not isinstance(rules, list):
         raise RuntimeError("environment protection evidence is absent")

@@ -177,6 +177,7 @@ def test_finite_base_wp7c_and_unchanged_wp7d_matrices_are_exact():
             "required_policy": {"name": "v0.1.1", "type": "tag"},
         },
         "prevent_self_review": True,
+        "can_admins_bypass": False,
     }
 
 
@@ -458,6 +459,7 @@ def _run_environment_verifier(tmp_path, environment, branch_policies):
 def _valid_environment_evidence():
     return {
         "name": "pypi",
+        "can_admins_bypass": False,
         "protection_rules": [
             {
                 "type": "required_reviewers",
@@ -482,6 +484,40 @@ def test_publication_environment_requires_exact_tag_and_reviewer_separation(tmp_
     environment, policies = _valid_environment_evidence()
     accepted = _run_environment_verifier(tmp_path, environment, policies)
     assert accepted.returncode == 0, accepted.stderr
+    assert accepted.stdout == "Exact protected pypi environment contract verified.\n"
+
+
+@pytest.mark.parametrize(
+    "admin_bypass",
+    (
+        pytest.param("missing", id="missing"),
+        pytest.param(True, id="true"),
+        pytest.param(None, id="null"),
+        pytest.param("false", id="string"),
+        pytest.param(0, id="zero"),
+        pytest.param(1, id="one"),
+        pytest.param([], id="list"),
+        pytest.param({}, id="mapping"),
+    ),
+)
+def test_publication_environment_rejects_admin_bypass_without_success_evidence(
+    tmp_path, admin_bypass
+):
+    environment, policies = _valid_environment_evidence()
+    if admin_bypass == "missing":
+        environment.pop("can_admins_bypass")
+    else:
+        environment["can_admins_bypass"] = admin_bypass
+
+    rejected = _run_environment_verifier(tmp_path, environment, policies)
+
+    assert rejected.returncode != 0
+    assert rejected.stdout == ""
+    assert "verified" not in rejected.stderr.lower()
+    assert {path.name for path in tmp_path.iterdir()} == {
+        "environment.json",
+        "branch-policies.json",
+    }
 
 
 @pytest.mark.parametrize(
@@ -564,8 +600,17 @@ def test_release_process_defines_exact_publication_trust_contract():
         "workflow: publish-pypi.yml",
         "environment: pypi",
         "publication remains blocked until a second eligible reviewer is available",
+        "Allow administrators to bypass configured protection rules: disabled.",
     ):
         assert wording in normalized
+
+
+def test_release_architecture_forbids_administrator_bypass():
+    architecture = (ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    assert (
+        "Allow administrators to bypass configured protection rules: disabled."
+        in " ".join(architecture.split())
+    )
 
 
 def test_canonical_claim_surfaces_distinguish_proposed_and_published_versions():
