@@ -37,6 +37,14 @@ source-store access remains disabled.
 - [ ] HTML report (alongside Markdown)
 - [ ] Map findings to **OWASP LLM Top 10 / GDPR / ISO 27001 / SOC 2** (pluggable per jurisdiction)
 
+## Corrective release readiness
+- [x] **WP8 non-publishing candidate preparation** — source proposes `0.1.1` from one Hatch version
+  source; canonical corrective notes, a finite base package matrix, build-once artifact checks,
+  artifact-only installs, unchanged WP7C/WP7D evidence matrices, hashes, and review manifests are
+  encoded in CI. The separate publication workflow is manual, never rebuilds, and remains dormant
+  without an exact tag, protected `pypi` environment, human approval, and externally configured PyPI
+  OIDC Trusted Publishing. WP8 does not publish, tag, release, yank, or configure external trust.
+
 ## Docs & website
 - [x] **README.zh-TW.md** — Traditional Chinese README, linked from the top of the English one (done 2026-07-06).
 - **Standing rule:** this ROADMAP stays in the repo permanently, website or no website. The repo is the builder-facing source of truth; ragleakguard.com is the buyer-facing story. The site may *summarize* the roadmap; it never replaces it.

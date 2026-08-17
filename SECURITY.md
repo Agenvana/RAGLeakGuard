@@ -7,16 +7,18 @@ RAGLeakGuard is an early-development security scanner. Detection is best-effort,
 | Version | Security-fix status | Notes |
 |---|---|---|
 | `0.1.0` | Unsafe for Chroma scanning | The published package contains the unsafe direct Chroma path addressed by WP7A and must not be used for Chroma scanning. Yank/publication actions require separate human authorization. |
-| Later `0.1.x` | Not yet published | A corrective release is not available until exact artifacts receive independent review and human publication approval. |
+| `0.1.1` | Proposed; not published | Source proposes the corrective version, but it is unavailable from PyPI until exact artifacts receive independent review and explicit human publication approval. |
+| Later `0.1.x` | Not published | No later corrective package is currently available. |
 | `main` | Pre-release | Receives fixes first; use a commit SHA when reporting behavior. |
 | `<0.1.0` | Unsupported | Do not use for Chroma scanning; reports should be checked against a named, reviewed source commit. |
 
-This is a pre-1.0 project. Compatibility and the supported runtime matrix may narrow as evidence
-improves. CI now exercises the WP7B filesystem evidence on ext4/Python 3.9, APFS/Python 3.9,
-NTFS/Python 3.9, and NTFS/Python 3.12. That finite evidence matrix is not a documented supported
-release matrix. WP7D separately activates exact ChromaDB 1.5.9 only on Linux/ext4 Python
-3.10–3.12, macOS 15/APFS Python 3.12, and Windows/NTFS Python 3.12; see the
-[release process](docs/RELEASE_PROCESS.md).
+This is a pre-1.0 project. Compatibility may narrow as evidence improves. The proposed `0.1.1`
+base/`detect` release matrix is CPython 3.9–3.12 on Ubuntu 24.04/ext4, macOS 15/APFS, and Windows
+Server 2025/NTFS, with package metadata `>=3.9,<3.13`. Each of those twelve artifact-install cells
+must pass for candidate evidence. This package matrix does not activate Chroma: WP7D remains exact
+ChromaDB 1.5.9 only on Linux/ext4 Python 3.10–3.12, macOS 15/APFS Python 3.12, and Windows/NTFS
+Python 3.12. See the canonical [0.1.1 notes](docs/releases/0.1.1.md) and [release
+process](docs/RELEASE_PROCESS.md).
 
 ## Reporting a vulnerability
 
@@ -83,9 +85,12 @@ only acceptable response headers. Detector completeness, exactly-once delivery, 
 at-least-once delivery, downstream processing, human notification, and historical v1/v2 alert
 recovery are not proved.
 
-**Planned or under review:** outbox administration/multiple destinations and reproducible release
-provenance. General Chroma support, other versions or environments, direct/live scanning, and
-monitor new scans are not implemented. No expansion or future-support commitment is made.
+**Planned or under review:** outbox administration/multiple destinations and stronger reproducible
+build provenance beyond the pinned build inputs, hashes, and candidate manifests implemented for
+WP8. General Chroma support, other versions or environments, direct/live scanning, and monitor new
+scans are not implemented. No expansion or future-support commitment is made. The dormant manual
+publication workflow does not itself configure the required protected GitHub environment or PyPI
+Trusted Publisher and does not authorize publication.
 
 The Prevent/Fix layer, erasure proof, Control Plane, multi-tenancy, vault/KMS, compliance certification, and assurance profile are not implemented and are outside the current supported surface.
 

@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "proposed_version": "0.1.1",
+  "python_requires": ">=3.9,<3.13",
+  "builder": {
+    "os": "ubuntu-24.04",
+    "python": "3.12.13"
+  },
+  "base_matrix": [
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.9"},
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.10"},
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.11"},
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.12"},
+    {"os": "macos-15", "platform": "macOS15-APFS", "python": "3.9"},
+    {"os": "macos-15", "platform": "macOS15-APFS", "python": "3.10"},
+    {"os": "macos-15", "platform": "macOS15-APFS", "python": "3.11"},
+    {"os": "macos-15", "platform": "macOS15-APFS", "python": "3.12"},
+    {"os": "windows-2025", "platform": "Windows-NTFS", "python": "3.9"},
+    {"os": "windows-2025", "platform": "Windows-NTFS", "python": "3.10"},
+    {"os": "windows-2025", "platform": "Windows-NTFS", "python": "3.11"},
+    {"os": "windows-2025", "platform": "Windows-NTFS", "python": "3.12"}
+  ],
+  "wp7c_matrix": [
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.10", "chroma": "1.5.0"},
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.10", "chroma": "1.5.9"},
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.11", "chroma": "1.5.0"},
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.11", "chroma": "1.5.9"},
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.12", "chroma": "1.5.0"},
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.12", "chroma": "1.5.9"},
+    {"os": "macos-15", "platform": "macOS15-APFS", "python": "3.12", "chroma": "1.5.0"},
+    {"os": "macos-15", "platform": "macOS15-APFS", "python": "3.12", "chroma": "1.5.9"},
+    {"os": "windows-2025", "platform": "Windows-NTFS", "python": "3.12", "chroma": "1.5.0"},
+    {"os": "windows-2025", "platform": "Windows-NTFS", "python": "3.12", "chroma": "1.5.9"}
+  ],
+  "wp7d_matrix": [
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.10", "chroma": "1.5.9"},
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.11", "chroma": "1.5.9"},
+    {"os": "ubuntu-24.04", "platform": "Linux-ext4", "python": "3.12", "chroma": "1.5.9"},
+    {"os": "macos-15", "platform": "macOS15-APFS", "python": "3.12", "chroma": "1.5.9"},
+    {"os": "windows-2025", "platform": "Windows-NTFS", "python": "3.12", "chroma": "1.5.9"}
+  ],
+  "spacy_model": {
+    "name": "en_core_web_sm",
+    "version": "3.7.1",
+    "url": "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl",
+    "sha256": "86cc141f63942d4b2c5fcee06630fd6f904788d2f0ab005cce45aadb8fb73889",
+    "size": 12803381
+  },
+  "publication": {
+    "trusted_publisher": {
+      "repository": "Agenvana/RAGLeakGuard",
+      "workflow": "publish-pypi.yml",
+      "environment": "pypi"
+    },
+    "workflow_ref": "refs/tags/v0.1.1",
+    "workflow_path": ".github/workflows/publish-pypi.yml",
+    "deployment_branch_policy": {
+      "protected_branches": false,
+      "custom_branch_policies": true,
+      "required_policy": {
+        "name": "v0.1.1",
+        "type": "tag"
+      }
+    },
+    "prevent_self_review": true,
+    "can_admins_bypass": false
+  },
+  "actions": {
+    "checkout": "11d5960a326750d5838078e36cf38b85af677262",
+    "setup_python": "a26af69be951a213d495a4c3e4e4022e16d87065",
+    "upload_artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+    "download_artifact": "d3f86a106a0bac45b974a628896c90dbdf5c8093",
+    "pypi_publish": "dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
+  }
+}

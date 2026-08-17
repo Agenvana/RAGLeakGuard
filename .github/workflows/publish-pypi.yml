@@ -1,0 +1,303 @@
+name: Publish reviewed corrective artifacts to PyPI (dormant)
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful non-publishing candidate workflow run ID
+        required: true
+        type: string
+      expected_commit:
+        description: Exact reviewed 40-character commit SHA
+        required: true
+        type: string
+      expected_tag:
+        description: Exact annotated tag (must be v0.1.1)
+        required: true
+        type: string
+      expected_version:
+        description: Exact artifact version (must be 0.1.1)
+        required: true
+        default: "0.1.1"
+        type: string
+      wheel_sha256:
+        description: Reviewed wheel SHA-256
+        required: true
+        type: string
+      sdist_sha256:
+        description: Reviewed sdist SHA-256
+        required: true
+        type: string
+      confirmation:
+        description: Type publish-reviewed-0.1.1-artifacts
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: pypi-ragleakguard-0.1.1
+  cancel-in-progress: false
+
+jobs:
+  validate-reviewed-artifacts:
+    name: Validate environment, workflow ref, tag, commit, evidence, and hashes
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      deployments: read
+    outputs:
+      candidate_run_id: ${{ steps.validate-dispatch.outputs.candidate_run_id }}
+      expected_commit: ${{ steps.validate-dispatch.outputs.expected_commit }}
+      expected_tag: ${{ steps.validate-dispatch.outputs.expected_tag }}
+      expected_version: ${{ steps.validate-dispatch.outputs.expected_version }}
+      wheel_sha256: ${{ steps.validate-dispatch.outputs.wheel_sha256 }}
+      sdist_sha256: ${{ steps.validate-dispatch.outputs.sdist_sha256 }}
+      workflow_ref: ${{ steps.validate-dispatch.outputs.workflow_ref }}
+      workflow_sha: ${{ steps.validate-dispatch.outputs.workflow_sha }}
+    steps:
+      - name: Validate dispatch inputs and immutable workflow identity
+        id: validate-dispatch
+        env:
+          RLG_INPUT_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          RLG_INPUT_EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          RLG_INPUT_EXPECTED_TAG: ${{ inputs.expected_tag }}
+          RLG_INPUT_EXPECTED_VERSION: ${{ inputs.expected_version }}
+          RLG_INPUT_WHEEL_SHA256: ${{ inputs.wheel_sha256 }}
+          RLG_INPUT_SDIST_SHA256: ${{ inputs.sdist_sha256 }}
+          RLG_INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          RLG_EVENT_NAME: ${{ github.event_name }}
+          RLG_REPOSITORY: ${{ github.repository }}
+          RLG_REF: ${{ github.ref }}
+          RLG_SHA: ${{ github.sha }}
+          RLG_WORKFLOW_REF: ${{ github.workflow_ref }}
+          RLG_WORKFLOW_SHA: ${{ github.workflow_sha }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import re
+
+          expected = {
+              "confirmation": "publish-reviewed-0.1.1-artifacts",
+              "version": "0.1.1",
+              "tag": "v0.1.1",
+              "event": "workflow_dispatch",
+              "repository": "Agenvana/RAGLeakGuard",
+              "ref": "refs/tags/v0.1.1",
+              "workflow_ref": "Agenvana/RAGLeakGuard/.github/workflows/publish-pypi.yml@refs/tags/v0.1.1",
+          }
+          observed = {
+              "confirmation": os.environ["RLG_INPUT_CONFIRMATION"],
+              "version": os.environ["RLG_INPUT_EXPECTED_VERSION"],
+              "tag": os.environ["RLG_INPUT_EXPECTED_TAG"],
+              "event": os.environ["RLG_EVENT_NAME"],
+              "repository": os.environ["RLG_REPOSITORY"],
+              "ref": os.environ["RLG_REF"],
+              "workflow_ref": os.environ["RLG_WORKFLOW_REF"],
+          }
+          if observed != expected:
+              raise SystemExit("dispatch authorization or workflow identity differs")
+
+          commit = os.environ["RLG_INPUT_EXPECTED_COMMIT"]
+          workflow_sha = os.environ["RLG_WORKFLOW_SHA"]
+          event_sha = os.environ["RLG_SHA"]
+          wheel_hash = os.environ["RLG_INPUT_WHEEL_SHA256"]
+          sdist_hash = os.environ["RLG_INPUT_SDIST_SHA256"]
+          run_id = os.environ["RLG_INPUT_CANDIDATE_RUN_ID"]
+          if re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+              raise SystemExit("expected commit must be 40 lowercase hexadecimal characters")
+          if workflow_sha != commit or event_sha != commit:
+              raise SystemExit("workflow, event, and expected commits differ")
+          if re.fullmatch(r"[0-9a-f]{64}", wheel_hash) is None:
+              raise SystemExit("wheel hash must be 64 lowercase hexadecimal characters")
+          if re.fullmatch(r"[0-9a-f]{64}", sdist_hash) is None:
+              raise SystemExit("sdist hash must be 64 lowercase hexadecimal characters")
+          if re.fullmatch(r"[1-9][0-9]*", run_id) is None:
+              raise SystemExit("candidate run ID must be a positive decimal integer")
+
+          outputs = {
+              "candidate_run_id": run_id,
+              "expected_commit": commit,
+              "expected_tag": observed["tag"],
+              "expected_version": observed["version"],
+              "wheel_sha256": wheel_hash,
+              "sdist_sha256": sdist_hash,
+              "workflow_ref": observed["ref"],
+              "workflow_sha": workflow_sha,
+          }
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              for name, value in outputs.items():
+                  handle.write(f"{name}={value}\n")
+          PY
+
+      - name: Check out the exact reviewed commit and tags
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.validate-dispatch.outputs.expected_commit }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Set up validation Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.13"
+
+      - name: Download exact build-once distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-dist
+          path: dist
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.validate-dispatch.outputs.candidate_run_id }}
+
+      - name: Download build evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-build-evidence
+          path: evidence/build
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.validate-dispatch.outputs.candidate_run_id }}
+
+      - name: Download completed gate evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-evidence
+          path: evidence/gate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.validate-dispatch.outputs.candidate_run_id }}
+
+      - name: Require exact protected pypi environment contract
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/environments/pypi" > pypi-environment.json
+          gh api "repos/${GITHUB_REPOSITORY}/environments/pypi/deployment-branch-policies?per_page=100" > pypi-deployment-policies.json
+          python .github/release/verify_environment.py \
+            --response pypi-environment.json \
+            --branch-policies pypi-deployment-policies.json
+
+      - name: Validate exact reviewed bytes without rebuilding
+        env:
+          RLG_CANDIDATE_RUN_ID: ${{ steps.validate-dispatch.outputs.candidate_run_id }}
+          RLG_EXPECTED_COMMIT: ${{ steps.validate-dispatch.outputs.expected_commit }}
+          RLG_EXPECTED_TAG: ${{ steps.validate-dispatch.outputs.expected_tag }}
+          RLG_EXPECTED_VERSION: ${{ steps.validate-dispatch.outputs.expected_version }}
+          RLG_WHEEL_SHA256: ${{ steps.validate-dispatch.outputs.wheel_sha256 }}
+          RLG_SDIST_SHA256: ${{ steps.validate-dispatch.outputs.sdist_sha256 }}
+          RLG_WORKFLOW_REF: ${{ github.workflow_ref }}
+          RLG_WORKFLOW_SHA: ${{ steps.validate-dispatch.outputs.workflow_sha }}
+        shell: bash
+        run: >-
+          python .github/release/verify_publication.py
+          --dist dist
+          --build-evidence evidence/build/build-evidence.json
+          --gate-evidence evidence/gate/release-candidate-evidence.json
+          --expected-version "$RLG_EXPECTED_VERSION"
+          --expected-commit "$RLG_EXPECTED_COMMIT"
+          --expected-tag "$RLG_EXPECTED_TAG"
+          --wheel-sha256 "$RLG_WHEEL_SHA256"
+          --sdist-sha256 "$RLG_SDIST_SHA256"
+          --candidate-run-id "$RLG_CANDIDATE_RUN_ID"
+          --repository "$GITHUB_REPOSITORY"
+          --server-url "$GITHUB_SERVER_URL"
+          --workflow-ref "$RLG_WORKFLOW_REF"
+          --workflow-sha "$RLG_WORKFLOW_SHA"
+
+  publish-pypi:
+    name: Publish the same reviewed bytes through OIDC
+    needs: validate-reviewed-artifacts
+    if: >-
+      needs.validate-reviewed-artifacts.outputs.workflow_ref == 'refs/tags/v0.1.1' &&
+      needs.validate-reviewed-artifacts.outputs.workflow_sha == needs.validate-reviewed-artifacts.outputs.expected_commit
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/ragleakguard/
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out exact validator and reviewed commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate-reviewed-artifacts.outputs.expected_commit }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Set up validation Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12.13"
+
+      - name: Download the same build-once distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-dist
+          path: dist
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.validate-reviewed-artifacts.outputs.candidate_run_id }}
+
+      - name: Download the same build evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-build-evidence
+          path: evidence/build
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.validate-reviewed-artifacts.outputs.candidate_run_id }}
+
+      - name: Download the same completed gate evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-candidate-evidence
+          path: evidence/gate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.validate-reviewed-artifacts.outputs.candidate_run_id }}
+
+      - name: Revalidate exact bytes immediately before OIDC publication
+        env:
+          RLG_CANDIDATE_RUN_ID: ${{ needs.validate-reviewed-artifacts.outputs.candidate_run_id }}
+          RLG_EXPECTED_COMMIT: ${{ needs.validate-reviewed-artifacts.outputs.expected_commit }}
+          RLG_EXPECTED_TAG: ${{ needs.validate-reviewed-artifacts.outputs.expected_tag }}
+          RLG_EXPECTED_VERSION: ${{ needs.validate-reviewed-artifacts.outputs.expected_version }}
+          RLG_WHEEL_SHA256: ${{ needs.validate-reviewed-artifacts.outputs.wheel_sha256 }}
+          RLG_SDIST_SHA256: ${{ needs.validate-reviewed-artifacts.outputs.sdist_sha256 }}
+          RLG_WORKFLOW_REF: ${{ github.workflow_ref }}
+          RLG_WORKFLOW_SHA: ${{ needs.validate-reviewed-artifacts.outputs.workflow_sha }}
+        shell: bash
+        run: >-
+          python .github/release/verify_publication.py
+          --dist dist
+          --build-evidence evidence/build/build-evidence.json
+          --gate-evidence evidence/gate/release-candidate-evidence.json
+          --expected-version "$RLG_EXPECTED_VERSION"
+          --expected-commit "$RLG_EXPECTED_COMMIT"
+          --expected-tag "$RLG_EXPECTED_TAG"
+          --wheel-sha256 "$RLG_WHEEL_SHA256"
+          --sdist-sha256 "$RLG_SDIST_SHA256"
+          --candidate-run-id "$RLG_CANDIDATE_RUN_ID"
+          --repository "$GITHUB_REPOSITORY"
+          --server-url "$GITHUB_SERVER_URL"
+          --workflow-ref "$RLG_WORKFLOW_REF"
+          --workflow-sha "$RLG_WORKFLOW_SHA"
+
+      - name: Publish without rebuilding or stored credentials
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: dist/
+          attestations: true
+          print-hash: true
+          skip-existing: false
+          verbose: false
+          verify-metadata: true

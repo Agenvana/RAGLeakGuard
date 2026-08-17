@@ -45,29 +45,31 @@ def test_package_metadata_keeps_chroma_optional_and_exact_for_snapshot_activatio
     sdist_include = re.findall(
         r'"([^"]+)"', re.search(r"include\s*=\s*\[(.*?)\]", sdist, re.DOTALL).group(1)
     )
-    sdist_exclude = re.findall(
-        r'"([^"]+)"', re.search(r"exclude\s*=\s*\[(.*?)\]", sdist, re.DOTALL).group(1)
-    )
-
     assert "chromadb" not in base_dependencies.lower()
     assert 'chroma-snapshot = ["chromadb==1.5.9"]' in optional_dependencies
     assert "operator-snapshot chroma" in description.lower()
     assert "scan your ai's vector database" not in description.lower()
-    assert re.search(r'^requires-python\s*=\s*">=3\.9"$', document, re.MULTILINE)
+    assert re.search(
+        r'^requires-python\s*=\s*">=3\.9,<3\.13"$', document, re.MULTILINE
+    )
 
     assert set(sdist_include) == {
         "/src/ragleakguard",
         "/README.md",
         "/README.zh-TW.md",
+        "/SECURITY.md",
         "/LICENSE",
         "/pyproject.toml",
+        "/docs/releases/0.1.1.md",
     }
     assert not any(
         forbidden in item
         for item in sdist_include
         for forbidden in ("tests", "reports", "scripts", ".github", ".env")
     )
-    assert sdist_exclude == ["/.gitignore"]
+    # Hatchling's standard sdist always includes the VCS ignore file; do not
+    # pretend an ineffective exclusion narrows the archive.
+    assert "exclude" not in sdist
 
 
 @pytest.mark.parametrize("path", ENGLISH_CURRENT, ids=lambda path: path.name)

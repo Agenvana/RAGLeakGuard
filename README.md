@@ -40,6 +40,25 @@ The PyPI `0.1.0` package contains the unsafe direct Chroma path and **must not b
 scanning**. Yanking that package and publishing a corrective release require separate human
 maintainer authorization and have not been performed by this repository change.
 
+## Corrective release status
+
+`0.1.1` is the proposed corrective version in source; it is not published, tagged, or released.
+Hatch reads `ragleakguard.__version__` as the single version source. The build-once
+`release-candidate.yml` workflow has read-only repository permissions, no publication credential,
+and no OIDC `id-token` permission. It builds wheel and sdist from one exact commit, inspects and
+hashes them, and tests the installed artifacts before it can emit review-only candidate evidence.
+
+The proposed base/`detect` package matrix is CPython 3.9–3.12 on Ubuntu 24.04/ext4, macOS 15/APFS,
+and Windows Server 2025/NTFS. Package metadata is finite at `>=3.9,<3.13`. This twelve-cell package
+matrix does not widen Chroma support: public snapshot activation remains the exact five ChromaDB
+1.5.9 cells stated above. See the canonical [0.1.1 corrective release
+notes](docs/releases/0.1.1.md) and [release process](docs/RELEASE_PROCESS.md).
+
+The separate `publish-pypi.yml` workflow is manual and dormant. It never rebuilds artifacts and
+requires an exact annotated tag, commit, version, candidate run, artifact hashes, a pre-existing
+protected `pypi` environment, and externally configured PyPI OIDC Trusted Publishing. WP8 does not
+create any of those publication authorities and publishes nothing.
+
 ## Current command behavior
 
 `scan --source chroma` accepts only `--snapshot`, `--work-parent`, a narrow pseudonymous

@@ -190,6 +190,34 @@ duplicate. Recovery does not access the source or construct any new scan result.
 - `6`: monitor reached the disabled new-scan boundary, or the exact snapshot candidate/activation
   environment is unavailable.
 
+### Corrective release boundary
+
+`0.1.1` is proposed in source but is not published, tagged, or released. Hatch reads
+`src/ragleakguard/__init__.py` as the single version source, and executable regression checks require
+that value to equal project, wheel, sdist, release-policy, and canonical release-note metadata.
+Package metadata is finite at Python `>=3.9,<3.13`.
+
+The non-publishing `release-candidate.yml` workflow checks out one full commit SHA, uses immutable
+full-SHA actions and hash-pinned build tools, builds the wheel and sdist once, validates metadata and
+archive membership, scans names and bytes for forbidden material and privacy canaries, and uploads
+the exact artifacts plus build evidence. Downloaded artifacts—not an editable checkout—are then
+tested in the twelve-cell base matrix, private ten-cell WP7C matrix, and unchanged public five-cell
+WP7D matrix. Only the final job, which depends on every matrix, can emit the
+`ready-for-independent-review` manifest. That status is not publication authorization.
+
+The separate `publish-pypi.yml` workflow is `workflow_dispatch` only and contains no build command.
+It accepts dispatch only from the exact reviewed
+`Agenvana/RAGLeakGuard/.github/workflows/publish-pypi.yml@refs/tags/v0.1.1` workflow ref, downloads
+artifacts from a validated positive candidate run ID, checks the annotated tag and commit, and
+revalidates the version and SHA-256 hashes twice. Its pre-existing `pypi` environment must prevent
+self-review and allow exactly the `v0.1.1` tag through a tag-only deployment policy, so a modified
+workflow on an arbitrary branch cannot reach the environment. Only the final environment-gated job
+has `id-token: write`; no username, password, API token, TestPyPI target, or stored publication
+secret is defined. Allow administrators to bypass configured protection rules: disabled. The
+external Trusted Publisher tuple is exactly repository
+`Agenvana/RAGLeakGuard`, workflow `publish-pypi.yml`, environment `pypi`; it remains a separate
+maintainer-controlled boundary and is not configured by WP8.
+
 ## Trust boundaries
 
 - A supplied snapshot/work/report path is sensitive input and must not appear in ordinary output,
@@ -202,6 +230,10 @@ duplicate. Recovery does not access the source or construct any new scan result.
   remain separate trust boundaries.
 - Package indexes, dependencies, model downloads, source control, and release systems are supply-chain
   boundaries.
+- Candidate artifact retention, GitHub runner images, the exact action commits, PyPI-hosted build
+  wheels, the spaCy model asset, protected-environment rules, and the external OIDC trust record are
+  distinct release-system boundaries. Candidate evidence records hashes and resolved inputs but is
+  not a general reproducible-build or supply-chain-compromise guarantee.
 - The operator who creates a source snapshot, the local account and administrators that can alter
   it, filesystem semantics, free-space accounting, and process/power-loss behavior are boundaries
   for the WP7B/WP7D lifecycle. The operator—not RAGLeakGuard—must create a complete,
