@@ -1,0 +1,18 @@
+# Environment for the Report #2 erasure reproduction (August 2026 cycle).
+# Create/reuse the venv at reports/tools/chromaenv - do NOT use a session
+# scratchpad venv (cycle #1's PDF build was lost that way).
+#
+#   python -m venv C:\Users\Belle\au-pr-niv-plan\reports\tools\chromaenv
+#   C:\Users\Belle\au-pr-niv-plan\reports\tools\chromaenv\Scripts\python.exe -m pip install -r C:\Users\Belle\au-pr-niv-plan\reports\tools\requirements-chroma.txt
+#
+# Versions below are what the published numbers were measured on. numpy,
+# onnxruntime and tokenizers arrive as chromadb dependencies; they are pinned
+# because the default embedding function (ONNX all-MiniLM-L6-v2) runs through
+# them and the recorded vectors must be reproducible byte for byte.
+#
+# First run downloads the ~79 MB ONNX model to ~/.cache/chroma/onnx_models/.
+
+chromadb==1.5.9
+numpy==2.5.1
+onnxruntime==1.28.0
+tokenizers==0.23.1

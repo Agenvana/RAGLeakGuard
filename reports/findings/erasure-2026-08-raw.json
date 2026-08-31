@@ -1,0 +1,414 @@
+{
+  "config": {
+    "seed": 20260801,
+    "chromadb": "1.5.9",
+    "python": "3.13.5",
+    "n_patients": 2000,
+    "n_erased": 100,
+    "n_follow_on_writes": 1500,
+    "embedding_function": "chroma default (ONNX all-MiniLM-L6-v2, 384-dim)",
+    "collection_settings": "all Chroma defaults (hnsw space l2, sync_threshold 1000)",
+    "erased_ids_first_5": [
+      "PT-00049",
+      "PT-00074",
+      "PT-00090",
+      "PT-00099",
+      "PT-00141"
+    ],
+    "erased_names_first_5": [
+      "Marguerite Kaur",
+      "Emeka Vasquez",
+      "Leo Muller",
+      "Chloe Yilmaz",
+      "Tobias Featherstone"
+    ]
+  },
+  "store_path": "C:\\Temp\\erasure_2026_08_store",
+  "A_records_loaded": 2000,
+  "A_files": {
+    "chroma.sqlite3": 6680576,
+    "6b0f011c-5f4a-48f3-afb4-56c32c584d36/data_level0.bin": 3352000,
+    "6b0f011c-5f4a-48f3-afb4-56c32c584d36/header.bin": 100,
+    "6b0f011c-5f4a-48f3-afb4-56c32c584d36/index_metadata.pickle": 72136,
+    "6b0f011c-5f4a-48f3-afb4-56c32c584d36/length.bin": 8000,
+    "6b0f011c-5f4a-48f3-afb4-56c32c584d36/link_lists.bin": 17860
+  },
+  "A_dim": 384,
+  "A_index_persisted": {
+    "segment": "6b0f011c-5f4a-48f3-afb4-56c32c584d36",
+    "nonzero_fraction": 0.9316,
+    "layout": {
+      "index_bytes": 3352000,
+      "capacity_slots": 2000,
+      "stride_bytes": 1676,
+      "vector_offset": 132,
+      "label_offset": 1668,
+      "link_bytes_per_slot": 132
+    }
+  },
+  "B_count_after_delete": 1900,
+  "B_files": {
+    "chroma.sqlite3": 6680576,
+    "6b0f011c-5f4a-48f3-afb4-56c32c584d36/data_level0.bin": 3352000,
+    "6b0f011c-5f4a-48f3-afb4-56c32c584d36/header.bin": 100,
+    "6b0f011c-5f4a-48f3-afb4-56c32c584d36/index_metadata.pickle": 72136,
+    "6b0f011c-5f4a-48f3-afb4-56c32c584d36/length.bin": 8000,
+    "6b0f011c-5f4a-48f3-afb4-56c32c584d36/link_lists.bin": 17860
+  },
+  "B_index_file_unchanged": {
+    "sha256_before_delete": "8ecd6333343c648f8f1a40a4a5b9c4016deb3b088359d77bac1f87d1f921f875",
+    "sha256_after_delete": "8ecd6333343c648f8f1a40a4a5b9c4016deb3b088359d77bac1f87d1f921f875",
+    "byte_identical": true
+  },
+  "C_api_view": {
+    "get_by_id_returns": [],
+    "full_scan_returns": 1900,
+    "query_with_victims_own_note": {
+      "victim_id": "PT-00049",
+      "returned_ids": [
+        "PT-00859",
+        "PT-00379",
+        "PT-00131"
+      ],
+      "victim_present": false
+    }
+  },
+  "C_after_restart": {
+    "count": 1900,
+    "get_by_id_returns": []
+  },
+  "D_sqlite_state": {
+    "tables": {
+      "acquire_write": 2
+    },
+    "embeddings_queue_columns": [
+      "seq_id",
+      "created_at",
+      "operation",
+      "topic",
+      "id",
+      "vector",
+      "encoding",
+      "metadata"
+    ],
+    "operations": {
+      "0": 1,
+      "3": 100
+    },
+    "embeddings_queue_config": [
+      {
+        "id": 1,
+        "config_json_str": "{\"automatically_purge\":true,\"_type\":\"EmbeddingsQueueConfigurationInternal\"}"
+      }
+    ]
+  },
+  "D_sqlite_pragmas": {
+    "secure_delete": 0,
+    "freelist_count_pages": 496,
+    "page_count": 1631,
+    "page_size": 4096
+  },
+  "D_wal_recovery": {
+    "records_with_any_wal_row": 100,
+    "records_with_surviving_add_row": 0,
+    "records_with_vector_in_wal": 0,
+    "records_with_document_text_in_wal": 0,
+    "operation_codes_seen": {
+      "3": 100
+    },
+    "samples": {
+      "PT-00049": {
+        "operations": [
+          3
+        ],
+        "vector_bytes": 0,
+        "metadata_first_240_chars": "{}"
+      },
+      "PT-00074": {
+        "operations": [
+          3
+        ],
+        "vector_bytes": 0,
+        "metadata_first_240_chars": "{}"
+      }
+    }
+  },
+  "D_byte_hits_sample": {
+    "PT-00049:name": {
+      "chroma.sqlite3": 5
+    },
+    "PT-00049:medicare": {
+      "chroma.sqlite3": 3
+    },
+    "PT-00049:email": {
+      "chroma.sqlite3": 3
+    },
+    "PT-00074:name": {
+      "chroma.sqlite3": 5
+    },
+    "PT-00074:medicare": {
+      "chroma.sqlite3": 3
+    },
+    "PT-00074:email": {
+      "chroma.sqlite3": 3
+    }
+  },
+  "D_byte_hit_counts": {
+    "names_still_on_disk": 100,
+    "medicare_still_on_disk": 100,
+    "emails_still_on_disk": 100,
+    "of_total": 100
+  },
+  "D_residue_location": {
+    "erased_records_reachable_by_any_live_sql_column": 0,
+    "of_total": 100,
+    "columns_scanned_per_record": "every column of every table",
+    "sample_live_queries": {
+      "PT-00049": {},
+      "PT-00074": {},
+      "PT-00090": {}
+    },
+    "freelist_walk": {
+      "declared_freelist_count": 496,
+      "walked_free_pages": 496,
+      "page_size": 4096,
+      "needles_only_in_freed_pages": 0,
+      "needles_only_in_allocated_pages": 53,
+      "needles_in_both_freed_and_allocated": 47,
+      "needles_absent": 0,
+      "checked": 100,
+      "sample": {
+        "PT-00049:email": {
+          "occurrences": 3,
+          "pages": [
+            300,
+            301,
+            915
+          ],
+          "free_pages_hit": []
+        },
+        "PT-00074:email": {
+          "occurrences": 3,
+          "pages": [
+            344,
+            351,
+            388
+          ],
+          "free_pages_hit": []
+        },
+        "PT-00090:email": {
+          "occurrences": 3,
+          "pages": [
+            336,
+            349,
+            504
+          ],
+          "free_pages_hit": []
+        }
+      }
+    }
+  },
+  "D_index_forensics": {
+    "layout": {
+      "index_bytes": 3352000,
+      "capacity_slots": 2000,
+      "stride_bytes": 1676,
+      "vector_offset": 132,
+      "label_offset": 1668,
+      "link_bytes_per_slot": 132
+    },
+    "slots_holding_a_vector": 2000,
+    "erased_found_bitwise_identical": 100,
+    "erased_total": 100,
+    "index_nonzero_fraction": 0.9316
+  },
+  "D_id_map": {
+    "present": true,
+    "file_bytes": 72136,
+    "id_to_label_entries": 2000,
+    "label_to_id_entries": 2000,
+    "total_elements_added": 2000,
+    "erased_ids_still_mapped": 100,
+    "erased_total": 100
+  },
+  "D_blind_recovery": {
+    "slots_scanned": 2000,
+    "slots_holding_a_vector": 2000,
+    "vectors_matched_to_a_patient": 2000,
+    "of_which_erased": 100,
+    "live_records_in_collection": 1900
+  },
+  "D_ghost_sample": {
+    "patient_id": "PT-00049",
+    "patient_name": "Marguerite Kaur",
+    "slot": 195,
+    "cosine_to_original": 1.0,
+    "first_6_floats": [
+      -0.11747640371322632,
+      0.01099690143018961,
+      0.04241495579481125,
+      -0.004311075899749994,
+      -0.1106862723827362,
+      -0.002682364545762539
+    ]
+  },
+  "E_reidentification": {
+    "name_only": {
+      "n": 100,
+      "candidate_pool": 2000,
+      "rank1": 64,
+      "rank5": 83,
+      "rank10": 88,
+      "median_rank": 1
+    },
+    "name_and_dob": {
+      "n": 100,
+      "candidate_pool": 2000,
+      "rank1": 54,
+      "rank5": 75,
+      "rank10": 81,
+      "median_rank": 1
+    },
+    "control_live_records_name_only": {
+      "n": 100,
+      "candidate_pool": 2000,
+      "rank1": 70,
+      "rank5": 84,
+      "rank10": 93,
+      "median_rank": 1
+    }
+  },
+  "F_mitigations": {
+    "F1_continued_writes": {
+      "writes_added": 1500,
+      "collection_count": 3400,
+      "index_bytes": 5028000,
+      "layout": {
+        "index_bytes": 5028000,
+        "capacity_slots": 3000,
+        "stride_bytes": 1676,
+        "vector_offset": 132,
+        "label_offset": 1668,
+        "link_bytes_per_slot": 132
+      },
+      "slots_holding_a_vector": 3000,
+      "erased_found_bitwise_identical": 100,
+      "erased_total": 100,
+      "index_nonzero_fraction": 0.9312,
+      "emails_still_on_disk": 100
+    },
+    "F2_vacuum": {
+      "command": "chroma vacuum --path <store> --force",
+      "returncode": 0,
+      "stdout": "Chroma Vacuum\n\n\nPurging the log...\n\nVacuuming (this may take a while)...\n\n\ud83e\uddfc Vacuum complete!\nDatabase size reduced by 2.2MiB (\u2b07\ufe0f2%)",
+      "stderr": "",
+      "sqlite_state": {
+        "tables": {
+          "acquire_write": 3
+        },
+        "embeddings_queue_columns": [
+          "seq_id",
+          "created_at",
+          "operation",
+          "topic",
+          "id",
+          "vector",
+          "encoding",
+          "metadata"
+        ],
+        "operations": {
+          "0": 1,
+          "3": 100
+        },
+        "embeddings_queue_config": [
+          {
+            "id": 1,
+            "config_json_str": "{\"automatically_purge\":true,\"_type\":\"EmbeddingsQueueConfigurationInternal\"}"
+          }
+        ]
+      },
+      "wal_recovery": {
+        "records_with_any_wal_row": 100,
+        "records_with_surviving_add_row": 0,
+        "records_with_vector_in_wal": 0,
+        "records_with_document_text_in_wal": 0,
+        "operation_codes_seen": {
+          "3": 100
+        },
+        "samples": {
+          "PT-00049": {
+            "operations": [
+              3
+            ],
+            "vector_bytes": 0,
+            "metadata_first_240_chars": "{}"
+          },
+          "PT-00074": {
+            "operations": [
+              3
+            ],
+            "vector_bytes": 0,
+            "metadata_first_240_chars": "{}"
+          }
+        }
+      },
+      "emails_still_on_disk": 0,
+      "medicare_still_on_disk": 0,
+      "names_still_on_disk": 0,
+      "names_before_vacuum": 100,
+      "pragmas": {
+        "secure_delete": 0,
+        "freelist_count_pages": 0,
+        "page_count": 1070,
+        "page_size": 4096
+      },
+      "erased_reachable_by_live_sql": 0,
+      "layout": {
+        "index_bytes": 3352000,
+        "capacity_slots": 2000,
+        "stride_bytes": 1676,
+        "vector_offset": 132,
+        "label_offset": 1668,
+        "link_bytes_per_slot": 132
+      },
+      "slots_holding_a_vector": 2000,
+      "erased_found_bitwise_identical": 100,
+      "erased_total": 100,
+      "index_nonzero_fraction": 0.9316,
+      "files": {
+        "chroma.sqlite3": 4382720,
+        "6b0f011c-5f4a-48f3-afb4-56c32c584d36/data_level0.bin": 3352000,
+        "6b0f011c-5f4a-48f3-afb4-56c32c584d36/header.bin": 100,
+        "6b0f011c-5f4a-48f3-afb4-56c32c584d36/index_metadata.pickle": 72136,
+        "6b0f011c-5f4a-48f3-afb4-56c32c584d36/length.bin": 8000,
+        "6b0f011c-5f4a-48f3-afb4-56c32c584d36/link_lists.bin": 17860
+      }
+    },
+    "F3_delete_collection": {
+      "files": {
+        "chroma.sqlite3": 6680576,
+        "6b0f011c-5f4a-48f3-afb4-56c32c584d36/data_level0.bin": 3352000,
+        "6b0f011c-5f4a-48f3-afb4-56c32c584d36/header.bin": 100,
+        "6b0f011c-5f4a-48f3-afb4-56c32c584d36/index_metadata.pickle": 72136,
+        "6b0f011c-5f4a-48f3-afb4-56c32c584d36/length.bin": 8000,
+        "6b0f011c-5f4a-48f3-afb4-56c32c584d36/link_lists.bin": 17860
+      },
+      "segment_dir_remaining": true,
+      "emails_still_on_disk": 92,
+      "medicare_still_on_disk": 92,
+      "of_total": 100,
+      "index_layout": {
+        "index_bytes": 3352000,
+        "capacity_slots": 2000,
+        "stride_bytes": 1676,
+        "vector_offset": 132,
+        "label_offset": 1668,
+        "link_bytes_per_slot": 132
+      },
+      "index_slots_holding_a_vector": 2000,
+      "index_erased_found_bitwise_identical": 100,
+      "index_erased_total": 100,
+      "index_index_nonzero_fraction": 0.9316
+    }
+  }
+}
