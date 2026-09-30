@@ -28,6 +28,12 @@ source-store access remains disabled.
 - [ ] Qdrant, Weaviate
 - [ ] **Files/folder connector (`--source files --path ./docs`)** — scan source documents & transcripts BEFORE they're uploaded to platform-bundled knowledge bases (Vapi, ElevenLabs, agent-builder platforms whose vector stores users can't reach). The pre-upload gate for closed platforms; pairs with `monitor` watching an "outbox" folder. (From Belle's voice-agent question, 2026-07-05.)
 
+## Erasure verification (from Report #2 "The Erasure Illusion", 2026-08)
+- [ ] **`ragleakguard erasure-audit <store>`** — point it at a Chroma directory; report vectors present on disk vs records the API admits to. The 2,000-vs-1,900 gap from Report #2 in one command, and its natural demo.
+- [ ] **Ghost-slot detector** — parse `data_level0.bin` + `index_metadata.pickle` and list orphaned labels. The parsing code exists in the Report #2 cycle script (`au-pr-niv-plan`); lift it, don't rewrite it.
+- [ ] **Post-erasure re-scan** — verify an erasure actually erased. Inside the disclosed patent scope (see **Prove** below), so safe to build in public.
+- [x] **Upstream docs note to chroma-core** — filed after Report #2 published: [chroma#7662](https://github.com/chroma-core/chroma/issues/7662).
+
 ## Integrations (make the scanner usable inside any agent stack)
 **Repo layout rule:** all open adapters live in THIS repo (MCP under the package as an optional extra, e.g. `pip install ragleakguard[mcp]`; platform agents under `integrations/<platform>/`). One repo concentrates stars, issues, and credibility instead of fragmenting them. A separate public repo only if a marketplace's listing process forces one. The Cloud stays in its own private repo (it's the paid product).
 - [ ] **MCP server wrapper** — expose `scan_store` / `scan_files` as Model Context Protocol tools so any MCP-compatible agent or platform can call the scanner with one config line. Hard rule: tools return **findings metadata only** (counts, types, risk scores, masked samples) — never raw detected values, since chat transcripts are themselves a data store.
