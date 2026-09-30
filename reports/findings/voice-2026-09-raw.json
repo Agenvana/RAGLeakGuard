@@ -1,0 +1,1473 @@
+{
+ "seed": 20260914,
+ "run_tag": "run1",
+ "roster": {
+  "calls": 200,
+  "au": 100,
+  "us": 100,
+  "scenario_counts": {
+   "booking": 40,
+   "refill": 40,
+   "results": 40,
+   "reschedule": 40,
+   "billing": 40
+  },
+  "roster_file": "voice_roster_2026-09.json",
+  "synthea_source": "synthea_sample_data_csv_apr2020.zip sha256 4194b18c11eaedcf0d5d5dd448d8ac9661f14381e2ef9f109215dc42266cd38a",
+  "total_words_per_rendering": {
+   "formatted": 23448,
+   "digits": 23702,
+   "spoken": 27469
+  }
+ },
+ "E_disclosed_vs_needed": {
+  "note": "counts distinct identifier KINDS per call; needs are the fields the booking system was designed to hold for that scenario",
+  "identifier_kinds_disclosed_total": 1560,
+  "identifier_kinds_needed_total": 560,
+  "surplus_kinds_total": 1000,
+  "calls_with_surplus": 200,
+  "calls_with_health_info_spoken": 200,
+  "calls_with_third_party_named": 120,
+  "surplus_by_kind": {
+   "address": 80,
+   "allergy": 80,
+   "condition": 200,
+   "email": 120,
+   "gp_name": 120,
+   "insurance": 7,
+   "medicare": 20,
+   "medication": 120,
+   "phone": 120,
+   "relative_name": 120,
+   "ssn": 13
+  },
+  "mean_surplus_kinds_per_call": 5.0
+ },
+ "environment": {
+  "presidio_nlp_model": "en_core_web_lg",
+  "presidio_analyzer": "2.2.364",
+  "spacy": "3.8.16",
+  "chromadb": "1.5.9",
+  "python": "3.13.5",
+  "platform": "win32"
+ },
+ "C_scan": {
+  "presidio_default": {
+   "formatted": {
+    "per_kind": {
+     "address": {
+      "n": 80,
+      "any": 74,
+      "actionable": 74,
+      "correct_label": 66,
+      "labels_seen": {
+       "LOCATION": 118,
+       "DATE_TIME": 14,
+       "PERSON": 30
+      }
+     },
+     "allergy": {
+      "n": 80,
+      "any": 0,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {}
+     },
+     "condition": {
+      "n": 200,
+      "any": 0,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {}
+     },
+     "dob": {
+      "n": 200,
+      "any": 200,
+      "actionable": 200,
+      "correct_label": 200,
+      "labels_seen": {
+       "DATE_TIME": 200
+      }
+     },
+     "email": {
+      "n": 120,
+      "any": 120,
+      "actionable": 120,
+      "correct_label": 120,
+      "labels_seen": {
+       "EMAIL_ADDRESS": 120,
+       "URL": 181,
+       "PERSON": 1,
+       "LOCATION": 3
+      }
+     },
+     "gp_name": {
+      "n": 120,
+      "any": 112,
+      "actionable": 112,
+      "correct_label": 112,
+      "labels_seen": {
+       "PERSON": 112,
+       "LOCATION": 1
+      }
+     },
+     "insurance": {
+      "n": 21,
+      "any": 4,
+      "actionable": 4,
+      "correct_label": 0,
+      "labels_seen": {
+       "PHONE_NUMBER": 2,
+       "LOCATION": 1,
+       "DATE_TIME": 3
+      }
+     },
+     "medicare": {
+      "n": 40,
+      "any": 37,
+      "actionable": 37,
+      "correct_label": 0,
+      "labels_seen": {
+       "DATE_TIME": 30,
+       "PHONE_NUMBER": 31
+      }
+     },
+     "medication": {
+      "n": 160,
+      "any": 9,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {
+       "US_DRIVER_LICENSE": 9
+      }
+     },
+     "name": {
+      "n": 200,
+      "any": 187,
+      "actionable": 187,
+      "correct_label": 183,
+      "labels_seen": {
+       "PERSON": 183,
+       "LOCATION": 4
+      }
+     },
+     "phone": {
+      "n": 200,
+      "any": 200,
+      "actionable": 200,
+      "correct_label": 200,
+      "labels_seen": {
+       "PHONE_NUMBER": 200,
+       "DATE_TIME": 41
+      }
+     },
+     "relative_name": {
+      "n": 120,
+      "any": 112,
+      "actionable": 112,
+      "correct_label": 110,
+      "labels_seen": {
+       "PERSON": 110,
+       "LOCATION": 1,
+       "NRP": 1
+      }
+     },
+     "ssn": {
+      "n": 19,
+      "any": 19,
+      "actionable": 19,
+      "correct_label": 19,
+      "labels_seen": {
+       "US_SSN": 19,
+       "US_ITIN": 10
+      }
+     }
+    },
+    "identity_total": {
+     "n": 1120,
+     "caught_any": 1065,
+     "caught_actionable": 1065,
+     "caught_with_correct_label": 1010,
+     "recall_any_pct": 95.1,
+     "recall_actionable_pct": 95.1,
+     "recall_correct_label_pct": 90.2
+    },
+    "identity_numeric_total": {
+     "n": 280,
+     "caught_any": 260,
+     "caught_actionable": 260,
+     "caught_with_correct_label": 219,
+     "recall_any_pct": 92.9,
+     "recall_actionable_pct": 92.9,
+     "recall_correct_label_pct": 78.2
+    },
+    "health_total": {
+     "n": 440,
+     "caught_any": 9,
+     "caught_actionable": 0,
+     "caught_with_correct_label": 0,
+     "recall_any_pct": 2.0,
+     "recall_actionable_pct": 0.0,
+     "recall_correct_label_pct": 0.0
+    },
+    "off_target_actionable_findings": 450,
+    "calls_with_at_least_one_identity_item_missed": 49,
+    "calls_with_at_least_one_item_missed_incl_health": 200,
+    "calls": 200
+   },
+   "digits": {
+    "per_kind": {
+     "address": {
+      "n": 80,
+      "any": 59,
+      "actionable": 59,
+      "correct_label": 43,
+      "labels_seen": {
+       "LOCATION": 61,
+       "DATE_TIME": 14,
+       "PERSON": 18,
+       "NRP": 1
+      }
+     },
+     "allergy": {
+      "n": 80,
+      "any": 0,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {}
+     },
+     "condition": {
+      "n": 200,
+      "any": 0,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {}
+     },
+     "dob": {
+      "n": 200,
+      "any": 191,
+      "actionable": 191,
+      "correct_label": 190,
+      "labels_seen": {
+       "DATE_TIME": 190,
+       "PHONE_NUMBER": 4,
+       "PERSON": 1
+      }
+     },
+     "email": {
+      "n": 120,
+      "any": 61,
+      "actionable": 61,
+      "correct_label": 0,
+      "labels_seen": {
+       "PERSON": 60,
+       "LOCATION": 1,
+       "NRP": 1
+      }
+     },
+     "gp_name": {
+      "n": 120,
+      "any": 116,
+      "actionable": 116,
+      "correct_label": 116,
+      "labels_seen": {
+       "PERSON": 126
+      }
+     },
+     "insurance": {
+      "n": 21,
+      "any": 3,
+      "actionable": 3,
+      "correct_label": 0,
+      "labels_seen": {
+       "PERSON": 2,
+       "MEDICAL_LICENSE": 1
+      }
+     },
+     "medicare": {
+      "n": 40,
+      "any": 40,
+      "actionable": 37,
+      "correct_label": 0,
+      "labels_seen": {
+       "DATE_TIME": 8,
+       "PHONE_NUMBER": 31,
+       "US_BANK_NUMBER": 40,
+       "US_DRIVER_LICENSE": 40,
+       "UK_NHS": 4
+      }
+     },
+     "medication": {
+      "n": 160,
+      "any": 9,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {
+       "US_DRIVER_LICENSE": 9
+      }
+     },
+     "name": {
+      "n": 200,
+      "any": 149,
+      "actionable": 149,
+      "correct_label": 142,
+      "labels_seen": {
+       "PERSON": 142,
+       "LOCATION": 7,
+       "NRP": 1
+      }
+     },
+     "phone": {
+      "n": 200,
+      "any": 200,
+      "actionable": 200,
+      "correct_label": 200,
+      "labels_seen": {
+       "DATE_TIME": 93,
+       "PHONE_NUMBER": 200,
+       "US_BANK_NUMBER": 200,
+       "US_DRIVER_LICENSE": 200,
+       "UK_NHS": 22,
+       "LOCATION": 1,
+       "PERSON": 1
+      }
+     },
+     "relative_name": {
+      "n": 120,
+      "any": 82,
+      "actionable": 82,
+      "correct_label": 79,
+      "labels_seen": {
+       "PERSON": 79,
+       "LOCATION": 3
+      }
+     },
+     "ssn": {
+      "n": 19,
+      "any": 19,
+      "actionable": 19,
+      "correct_label": 19,
+      "labels_seen": {
+       "US_BANK_NUMBER": 19,
+       "US_SSN": 19,
+       "US_ITIN": 10,
+       "US_PASSPORT": 19,
+       "US_DRIVER_LICENSE": 19,
+       "DATE_TIME": 5
+      }
+     }
+    },
+    "identity_total": {
+     "n": 1120,
+     "caught_any": 920,
+     "caught_actionable": 917,
+     "caught_with_correct_label": 789,
+     "recall_any_pct": 82.1,
+     "recall_actionable_pct": 81.9,
+     "recall_correct_label_pct": 70.4
+    },
+    "identity_numeric_total": {
+     "n": 280,
+     "caught_any": 262,
+     "caught_actionable": 259,
+     "caught_with_correct_label": 219,
+     "recall_any_pct": 93.6,
+     "recall_actionable_pct": 92.5,
+     "recall_correct_label_pct": 78.2
+    },
+    "health_total": {
+     "n": 440,
+     "caught_any": 9,
+     "caught_actionable": 0,
+     "caught_with_correct_label": 0,
+     "recall_any_pct": 2.0,
+     "recall_actionable_pct": 0.0,
+     "recall_correct_label_pct": 0.0
+    },
+    "off_target_actionable_findings": 388,
+    "calls_with_at_least_one_identity_item_missed": 132,
+    "calls_with_at_least_one_item_missed_incl_health": 200,
+    "calls": 200
+   },
+   "spoken": {
+    "per_kind": {
+     "address": {
+      "n": 80,
+      "any": 60,
+      "actionable": 60,
+      "correct_label": 44,
+      "labels_seen": {
+       "LOCATION": 70,
+       "DATE_TIME": 15,
+       "PERSON": 18
+      }
+     },
+     "allergy": {
+      "n": 80,
+      "any": 0,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {}
+     },
+     "condition": {
+      "n": 200,
+      "any": 0,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {}
+     },
+     "dob": {
+      "n": 200,
+      "any": 188,
+      "actionable": 188,
+      "correct_label": 186,
+      "labels_seen": {
+       "DATE_TIME": 209,
+       "PERSON": 3
+      }
+     },
+     "email": {
+      "n": 120,
+      "any": 76,
+      "actionable": 76,
+      "correct_label": 0,
+      "labels_seen": {
+       "PERSON": 63,
+       "LOCATION": 1,
+       "DATE_TIME": 29
+      }
+     },
+     "gp_name": {
+      "n": 120,
+      "any": 116,
+      "actionable": 116,
+      "correct_label": 116,
+      "labels_seen": {
+       "PERSON": 126
+      }
+     },
+     "insurance": {
+      "n": 21,
+      "any": 7,
+      "actionable": 7,
+      "correct_label": 0,
+      "labels_seen": {
+       "DATE_TIME": 8
+      }
+     },
+     "medicare": {
+      "n": 40,
+      "any": 20,
+      "actionable": 20,
+      "correct_label": 0,
+      "labels_seen": {
+       "DATE_TIME": 20
+      }
+     },
+     "medication": {
+      "n": 160,
+      "any": 9,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {
+       "US_DRIVER_LICENSE": 9
+      }
+     },
+     "name": {
+      "n": 200,
+      "any": 150,
+      "actionable": 150,
+      "correct_label": 143,
+      "labels_seen": {
+       "PERSON": 143,
+       "LOCATION": 7,
+       "NRP": 1
+      }
+     },
+     "phone": {
+      "n": 200,
+      "any": 66,
+      "actionable": 66,
+      "correct_label": 0,
+      "labels_seen": {
+       "DATE_TIME": 66
+      }
+     },
+     "relative_name": {
+      "n": 120,
+      "any": 82,
+      "actionable": 82,
+      "correct_label": 79,
+      "labels_seen": {
+       "PERSON": 79,
+       "LOCATION": 3
+      }
+     },
+     "ssn": {
+      "n": 19,
+      "any": 19,
+      "actionable": 19,
+      "correct_label": 0,
+      "labels_seen": {
+       "DATE_TIME": 19
+      }
+     }
+    },
+    "identity_total": {
+     "n": 1120,
+     "caught_any": 784,
+     "caught_actionable": 784,
+     "caught_with_correct_label": 568,
+     "recall_any_pct": 70.0,
+     "recall_actionable_pct": 70.0,
+     "recall_correct_label_pct": 50.7
+    },
+    "identity_numeric_total": {
+     "n": 280,
+     "caught_any": 112,
+     "caught_actionable": 112,
+     "caught_with_correct_label": 0,
+     "recall_any_pct": 40.0,
+     "recall_actionable_pct": 40.0,
+     "recall_correct_label_pct": 0.0
+    },
+    "health_total": {
+     "n": 440,
+     "caught_any": 9,
+     "caught_actionable": 0,
+     "caught_with_correct_label": 0,
+     "recall_any_pct": 2.0,
+     "recall_actionable_pct": 0.0,
+     "recall_correct_label_pct": 0.0
+    },
+    "off_target_actionable_findings": 388,
+    "calls_with_at_least_one_identity_item_missed": 172,
+    "calls_with_at_least_one_item_missed_incl_health": 200,
+    "calls": 200
+   }
+  },
+  "presidio_au_on": {
+   "formatted": {
+    "per_kind": {
+     "address": {
+      "n": 80,
+      "any": 74,
+      "actionable": 74,
+      "correct_label": 66,
+      "labels_seen": {
+       "LOCATION": 118,
+       "DATE_TIME": 14,
+       "PERSON": 30
+      }
+     },
+     "allergy": {
+      "n": 80,
+      "any": 0,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {}
+     },
+     "condition": {
+      "n": 200,
+      "any": 0,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {}
+     },
+     "dob": {
+      "n": 200,
+      "any": 200,
+      "actionable": 200,
+      "correct_label": 200,
+      "labels_seen": {
+       "DATE_TIME": 200
+      }
+     },
+     "email": {
+      "n": 120,
+      "any": 120,
+      "actionable": 120,
+      "correct_label": 120,
+      "labels_seen": {
+       "EMAIL_ADDRESS": 120,
+       "URL": 181,
+       "PERSON": 1,
+       "LOCATION": 3
+      }
+     },
+     "gp_name": {
+      "n": 120,
+      "any": 112,
+      "actionable": 112,
+      "correct_label": 112,
+      "labels_seen": {
+       "PERSON": 112,
+       "LOCATION": 1
+      }
+     },
+     "insurance": {
+      "n": 21,
+      "any": 6,
+      "actionable": 6,
+      "correct_label": 0,
+      "labels_seen": {
+       "AU_TFN": 2,
+       "PHONE_NUMBER": 2,
+       "LOCATION": 1,
+       "DATE_TIME": 3,
+       "AU_ACN": 1
+      }
+     },
+     "medicare": {
+      "n": 40,
+      "any": 40,
+      "actionable": 40,
+      "correct_label": 40,
+      "labels_seen": {
+       "AU_MEDICARE": 40,
+       "DATE_TIME": 30,
+       "PHONE_NUMBER": 31
+      }
+     },
+     "medication": {
+      "n": 160,
+      "any": 9,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {
+       "US_DRIVER_LICENSE": 9
+      }
+     },
+     "name": {
+      "n": 200,
+      "any": 187,
+      "actionable": 187,
+      "correct_label": 183,
+      "labels_seen": {
+       "PERSON": 183,
+       "LOCATION": 4
+      }
+     },
+     "phone": {
+      "n": 200,
+      "any": 200,
+      "actionable": 200,
+      "correct_label": 200,
+      "labels_seen": {
+       "PHONE_NUMBER": 200,
+       "DATE_TIME": 41
+      }
+     },
+     "relative_name": {
+      "n": 120,
+      "any": 112,
+      "actionable": 112,
+      "correct_label": 110,
+      "labels_seen": {
+       "PERSON": 110,
+       "LOCATION": 1,
+       "NRP": 1
+      }
+     },
+     "ssn": {
+      "n": 19,
+      "any": 19,
+      "actionable": 19,
+      "correct_label": 19,
+      "labels_seen": {
+       "US_SSN": 19,
+       "US_ITIN": 10
+      }
+     }
+    },
+    "identity_total": {
+     "n": 1120,
+     "caught_any": 1070,
+     "caught_actionable": 1070,
+     "caught_with_correct_label": 1050,
+     "recall_any_pct": 95.5,
+     "recall_actionable_pct": 95.5,
+     "recall_correct_label_pct": 93.8
+    },
+    "identity_numeric_total": {
+     "n": 280,
+     "caught_any": 265,
+     "caught_actionable": 265,
+     "caught_with_correct_label": 259,
+     "recall_any_pct": 94.6,
+     "recall_actionable_pct": 94.6,
+     "recall_correct_label_pct": 92.5
+    },
+    "health_total": {
+     "n": 440,
+     "caught_any": 9,
+     "caught_actionable": 0,
+     "caught_with_correct_label": 0,
+     "recall_any_pct": 2.0,
+     "recall_actionable_pct": 0.0,
+     "recall_correct_label_pct": 0.0
+    },
+    "off_target_actionable_findings": 450,
+    "calls_with_at_least_one_identity_item_missed": 46,
+    "calls_with_at_least_one_item_missed_incl_health": 200,
+    "calls": 200
+   },
+   "digits": {
+    "per_kind": {
+     "address": {
+      "n": 80,
+      "any": 59,
+      "actionable": 59,
+      "correct_label": 43,
+      "labels_seen": {
+       "LOCATION": 61,
+       "DATE_TIME": 14,
+       "PERSON": 18,
+       "NRP": 1
+      }
+     },
+     "allergy": {
+      "n": 80,
+      "any": 0,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {}
+     },
+     "condition": {
+      "n": 200,
+      "any": 0,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {}
+     },
+     "dob": {
+      "n": 200,
+      "any": 191,
+      "actionable": 191,
+      "correct_label": 190,
+      "labels_seen": {
+       "DATE_TIME": 190,
+       "PHONE_NUMBER": 5,
+       "PERSON": 1
+      }
+     },
+     "email": {
+      "n": 120,
+      "any": 61,
+      "actionable": 61,
+      "correct_label": 0,
+      "labels_seen": {
+       "PERSON": 60,
+       "LOCATION": 1,
+       "NRP": 1
+      }
+     },
+     "gp_name": {
+      "n": 120,
+      "any": 116,
+      "actionable": 116,
+      "correct_label": 116,
+      "labels_seen": {
+       "PERSON": 126
+      }
+     },
+     "insurance": {
+      "n": 21,
+      "any": 3,
+      "actionable": 3,
+      "correct_label": 0,
+      "labels_seen": {
+       "PERSON": 2,
+       "MEDICAL_LICENSE": 1
+      }
+     },
+     "medicare": {
+      "n": 40,
+      "any": 40,
+      "actionable": 40,
+      "correct_label": 40,
+      "labels_seen": {
+       "AU_MEDICARE": 40,
+       "DATE_TIME": 8,
+       "PHONE_NUMBER": 31,
+       "US_BANK_NUMBER": 40,
+       "US_DRIVER_LICENSE": 40,
+       "UK_NHS": 4
+      }
+     },
+     "medication": {
+      "n": 160,
+      "any": 9,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {
+       "US_DRIVER_LICENSE": 9
+      }
+     },
+     "name": {
+      "n": 200,
+      "any": 149,
+      "actionable": 149,
+      "correct_label": 142,
+      "labels_seen": {
+       "PERSON": 142,
+       "LOCATION": 7,
+       "NRP": 1
+      }
+     },
+     "phone": {
+      "n": 200,
+      "any": 200,
+      "actionable": 200,
+      "correct_label": 200,
+      "labels_seen": {
+       "DATE_TIME": 93,
+       "PHONE_NUMBER": 200,
+       "US_BANK_NUMBER": 200,
+       "US_DRIVER_LICENSE": 200,
+       "UK_NHS": 22,
+       "AU_MEDICARE": 9,
+       "LOCATION": 1,
+       "PERSON": 1
+      }
+     },
+     "relative_name": {
+      "n": 120,
+      "any": 82,
+      "actionable": 82,
+      "correct_label": 79,
+      "labels_seen": {
+       "PERSON": 79,
+       "LOCATION": 3
+      }
+     },
+     "ssn": {
+      "n": 19,
+      "any": 19,
+      "actionable": 19,
+      "correct_label": 19,
+      "labels_seen": {
+       "AU_TFN": 1,
+       "US_BANK_NUMBER": 19,
+       "US_SSN": 19,
+       "US_ITIN": 10,
+       "US_PASSPORT": 19,
+       "US_DRIVER_LICENSE": 19,
+       "AU_ACN": 1,
+       "DATE_TIME": 5
+      }
+     }
+    },
+    "identity_total": {
+     "n": 1120,
+     "caught_any": 920,
+     "caught_actionable": 920,
+     "caught_with_correct_label": 829,
+     "recall_any_pct": 82.1,
+     "recall_actionable_pct": 82.1,
+     "recall_correct_label_pct": 74.0
+    },
+    "identity_numeric_total": {
+     "n": 280,
+     "caught_any": 262,
+     "caught_actionable": 262,
+     "caught_with_correct_label": 259,
+     "recall_any_pct": 93.6,
+     "recall_actionable_pct": 93.6,
+     "recall_correct_label_pct": 92.5
+    },
+    "health_total": {
+     "n": 440,
+     "caught_any": 9,
+     "caught_actionable": 0,
+     "caught_with_correct_label": 0,
+     "recall_any_pct": 2.0,
+     "recall_actionable_pct": 0.0,
+     "recall_correct_label_pct": 0.0
+    },
+    "off_target_actionable_findings": 388,
+    "calls_with_at_least_one_identity_item_missed": 132,
+    "calls_with_at_least_one_item_missed_incl_health": 200,
+    "calls": 200
+   },
+   "spoken": {
+    "per_kind": {
+     "address": {
+      "n": 80,
+      "any": 60,
+      "actionable": 60,
+      "correct_label": 44,
+      "labels_seen": {
+       "LOCATION": 70,
+       "DATE_TIME": 15,
+       "PERSON": 18
+      }
+     },
+     "allergy": {
+      "n": 80,
+      "any": 0,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {}
+     },
+     "condition": {
+      "n": 200,
+      "any": 0,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {}
+     },
+     "dob": {
+      "n": 200,
+      "any": 188,
+      "actionable": 188,
+      "correct_label": 186,
+      "labels_seen": {
+       "DATE_TIME": 209,
+       "PERSON": 3
+      }
+     },
+     "email": {
+      "n": 120,
+      "any": 76,
+      "actionable": 76,
+      "correct_label": 0,
+      "labels_seen": {
+       "PERSON": 63,
+       "LOCATION": 1,
+       "DATE_TIME": 29
+      }
+     },
+     "gp_name": {
+      "n": 120,
+      "any": 116,
+      "actionable": 116,
+      "correct_label": 116,
+      "labels_seen": {
+       "PERSON": 126
+      }
+     },
+     "insurance": {
+      "n": 21,
+      "any": 7,
+      "actionable": 7,
+      "correct_label": 0,
+      "labels_seen": {
+       "DATE_TIME": 8
+      }
+     },
+     "medicare": {
+      "n": 40,
+      "any": 20,
+      "actionable": 20,
+      "correct_label": 0,
+      "labels_seen": {
+       "DATE_TIME": 20
+      }
+     },
+     "medication": {
+      "n": 160,
+      "any": 9,
+      "actionable": 0,
+      "correct_label": 0,
+      "labels_seen": {
+       "US_DRIVER_LICENSE": 9
+      }
+     },
+     "name": {
+      "n": 200,
+      "any": 150,
+      "actionable": 150,
+      "correct_label": 143,
+      "labels_seen": {
+       "PERSON": 143,
+       "LOCATION": 7,
+       "NRP": 1
+      }
+     },
+     "phone": {
+      "n": 200,
+      "any": 66,
+      "actionable": 66,
+      "correct_label": 0,
+      "labels_seen": {
+       "DATE_TIME": 66
+      }
+     },
+     "relative_name": {
+      "n": 120,
+      "any": 82,
+      "actionable": 82,
+      "correct_label": 79,
+      "labels_seen": {
+       "PERSON": 79,
+       "LOCATION": 3
+      }
+     },
+     "ssn": {
+      "n": 19,
+      "any": 19,
+      "actionable": 19,
+      "correct_label": 0,
+      "labels_seen": {
+       "DATE_TIME": 19
+      }
+     }
+    },
+    "identity_total": {
+     "n": 1120,
+     "caught_any": 784,
+     "caught_actionable": 784,
+     "caught_with_correct_label": 568,
+     "recall_any_pct": 70.0,
+     "recall_actionable_pct": 70.0,
+     "recall_correct_label_pct": 50.7
+    },
+    "identity_numeric_total": {
+     "n": 280,
+     "caught_any": 112,
+     "caught_actionable": 112,
+     "caught_with_correct_label": 0,
+     "recall_any_pct": 40.0,
+     "recall_actionable_pct": 40.0,
+     "recall_correct_label_pct": 0.0
+    },
+    "health_total": {
+     "n": 440,
+     "caught_any": 9,
+     "caught_actionable": 0,
+     "caught_with_correct_label": 0,
+     "recall_any_pct": 2.0,
+     "recall_actionable_pct": 0.0,
+     "recall_correct_label_pct": 0.0
+    },
+    "off_target_actionable_findings": 388,
+    "calls_with_at_least_one_identity_item_missed": 172,
+    "calls_with_at_least_one_item_missed_incl_health": 200,
+    "calls": 200
+   }
+  }
+ },
+ "texture_samples": [
+  {
+   "call": "CALL-000",
+   "region": "AU",
+   "scenario": "booking",
+   "rendering": "formatted",
+   "findings_sample": [
+    "DATE_TIME@0.85 'today'",
+    "PERSON@0.85 'Kirk Reinger'",
+    "PERSON@0.85 'Kirk'",
+    "DATE_TIME@0.85 '26 November 1947'",
+    "PHONE_NUMBER@0.75 '0454 955 980'",
+    "PERSON@0.85 'Lucio Robel'",
+    "PERSON@0.85 'Jeane'",
+    "DATE_TIME@0.85 'Monday'",
+    "EMAIL_ADDRESS@1.00 'kirk.reinger34@bigpond.com'",
+    "URL@0.50 'kirk.re'",
+    "URL@0.50 'bigpond.com'"
+   ],
+   "truth_sample": [
+    "name: 'Kirk Reinger'",
+    "dob: '26 November 1947'",
+    "phone: '0454 955 980'",
+    "condition: 'high cholesterol'",
+    "medication: 'simvastatin'",
+    "allergy: 'penicillin'",
+    "gp_name: 'Lucio Robel'",
+    "relative_name: 'Jeane'",
+    "email: 'kirk.reinger34@bigpond.com'"
+   ]
+  },
+  {
+   "call": "CALL-001",
+   "region": "US",
+   "scenario": "refill",
+   "rendering": "formatted",
+   "findings_sample": [
+    "DATE_TIME@0.85 'today'",
+    "PERSON@0.85 'Micheal Lang'",
+    "DATE_TIME@0.85 'August 9, 1964'",
+    "LOCATION@0.85 'Boston'",
+    "LOCATION@0.85 'Massachusetts'",
+    "US_SSN@0.85 '999-87-7767'",
+    "US_ITIN@0.50 '999-87-7767'",
+    "PHONE_NUMBER@0.75 '(617) 782-1563'"
+   ],
+   "truth_sample": [
+    "name: 'Micheal Lang'",
+    "dob: 'August 9, 1964'",
+    "medication: 'atenolol'",
+    "condition: 'anaemia'",
+    "address: '1065 Wisozk Route Unit 21, Boston, Massachusetts 02115'",
+    "ssn: '999-87-7767'",
+    "phone: '(617) 782-1563'"
+   ]
+  },
+  {
+   "call": "CALL-004",
+   "region": "AU",
+   "scenario": "billing",
+   "rendering": "formatted",
+   "findings_sample": [
+    "DATE_TIME@0.85 'today'",
+    "PERSON@0.85 'Noella Hermiston'",
+    "DATE_TIME@0.85 '31 January 1995'",
+    "DATE_TIME@0.85 '6542 64290 2'",
+    "PHONE_NUMBER@0.75 '6542 64290 2'",
+    "LOCATION@0.85 'Newtown'",
+    "DATE_TIME@0.85 '2042'",
+    "EMAIL_ADDRESS@1.00 'noella.hermiston52@hotmail.com'",
+    "URL@0.50 'hotmail.com'",
+    "DATE_TIME@0.85 '0463 159 854'",
+    "PHONE_NUMBER@0.40 '0463 159 854'"
+   ],
+   "truth_sample": [
+    "name: 'Noella Hermiston'",
+    "dob: '31 January 1995'",
+    "medicare: '6542 64290 2'",
+    "address: '48 Given Tce, Newtown NSW 2042'",
+    "condition: 'high blood pressure'",
+    "medication: 'atenolol'",
+    "email: 'noella.hermiston52@hotmail.com'",
+    "phone: '0463 159 854'"
+   ]
+  },
+  {
+   "call": "CALL-007",
+   "region": "US",
+   "scenario": "results",
+   "rendering": "formatted",
+   "findings_sample": [
+    "DATE_TIME@0.85 'today'",
+    "DATE_TIME@0.85 'August 7, 1976'",
+    "PERSON@0.85 'Dr Wynell Wisozk'",
+    "PERSON@0.85 'Tonja'",
+    "PHONE_NUMBER@0.75 '(508) 391-3810'",
+    "EMAIL_ADDRESS@1.00 'aleisha.douglas41@yahoo.com'",
+    "URL@0.50 'aleisha.do'",
+    "URL@0.50 'yahoo.com'"
+   ],
+   "truth_sample": [
+    "name: 'Aleisha Douglas'",
+    "dob: 'August 7, 1976'",
+    "condition: 'arthritis in my knee'",
+    "gp_name: 'Wynell Wisozk'",
+    "relative_name: 'Tonja'",
+    "phone: '(508) 391-3810'",
+    "email: 'aleisha.douglas41@yahoo.com'",
+    "medication: 'hydrochlorothiazide'"
+   ]
+  },
+  {
+   "call": "CALL-000",
+   "region": "AU",
+   "scenario": "booking",
+   "rendering": "digits",
+   "findings_sample": [
+    "DATE_TIME@0.85 'today'",
+    "PERSON@0.85 'kirk reinger'",
+    "PERSON@0.85 'kirk'",
+    "DATE_TIME@0.85 '26 11 1947'",
+    "DATE_TIME@0.85 '0454955980'",
+    "PHONE_NUMBER@0.75 '0454955980'",
+    "US_BANK_NUMBER@0.05 '0454955980'",
+    "US_DRIVER_LICENSE@0.01 '0454955980'",
+    "PERSON@0.85 'dr lucio'",
+    "PERSON@0.85 'jeane'",
+    "DATE_TIME@0.85 'monday 315'",
+    "PERSON@0.85 'kirk dot reinger34'"
+   ],
+   "truth_sample": [
+    "name: 'kirk reinger'",
+    "dob: '26 11 1947'",
+    "phone: '0454955980'",
+    "condition: 'high cholesterol'",
+    "medication: 'simvastatin'",
+    "allergy: 'penicillin'",
+    "gp_name: 'lucio robel'",
+    "relative_name: 'jeane'",
+    "email: 'kirk dot reinger34 at bigpond dot com'"
+   ]
+  },
+  {
+   "call": "CALL-001",
+   "region": "US",
+   "scenario": "refill",
+   "rendering": "digits",
+   "findings_sample": [
+    "DATE_TIME@0.85 'today'",
+    "PERSON@0.85 'micheal lang\n'",
+    "DATE_TIME@0.85 '8 9 1964'",
+    "LOCATION@0.85 'boston'",
+    "LOCATION@0.85 'massachusetts'",
+    "DATE_TIME@0.85 '02115'",
+    "US_BANK_NUMBER@0.40 '999877767'",
+    "US_SSN@0.40 '999877767'",
+    "US_ITIN@0.30 '999877767'",
+    "US_PASSPORT@0.05 '999877767'",
+    "US_DRIVER_LICENSE@0.01 '999877767'",
+    "DATE_TIME@0.85 '6177821563'",
+    "PHONE_NUMBER@0.75 '6177821563'",
+    "US_BANK_NUMBER@0.05 '6177821563'",
+    "US_DRIVER_LICENSE@0.01 '6177821563'"
+   ],
+   "truth_sample": [
+    "name: 'micheal lang'",
+    "dob: '8 9 1964'",
+    "medication: 'atenolol'",
+    "condition: 'anaemia'",
+    "address: '1065 wisozk route unit 21 boston massachusetts 02115'",
+    "ssn: '999877767'",
+    "phone: '6177821563'"
+   ]
+  },
+  {
+   "call": "CALL-004",
+   "region": "AU",
+   "scenario": "billing",
+   "rendering": "digits",
+   "findings_sample": [
+    "DATE_TIME@0.85 'today'",
+    "LOCATION@0.85 'hermiston'",
+    "DATE_TIME@0.85 '31 1 1995'",
+    "DATE_TIME@0.85 '6542642902'",
+    "PHONE_NUMBER@0.75 '6542642902'",
+    "US_BANK_NUMBER@0.05 '6542642902'",
+    "US_DRIVER_LICENSE@0.01 '6542642902'",
+    "DATE_TIME@0.85 '0463159854'",
+    "PHONE_NUMBER@0.40 '0463159854'",
+    "US_BANK_NUMBER@0.05 '0463159854'",
+    "US_DRIVER_LICENSE@0.01 '0463159854'"
+   ],
+   "truth_sample": [
+    "name: 'noella hermiston'",
+    "dob: '31 1 1995'",
+    "medicare: '6542642902'",
+    "address: '48 given tce newtown nsw 2042'",
+    "condition: 'high blood pressure'",
+    "medication: 'atenolol'",
+    "email: 'noella dot hermiston52 at hotmail dot com'",
+    "phone: '0463159854'"
+   ]
+  },
+  {
+   "call": "CALL-007",
+   "region": "US",
+   "scenario": "results",
+   "rendering": "digits",
+   "findings_sample": [
+    "DATE_TIME@0.85 'today'",
+    "PERSON@0.85 'douglas'",
+    "DATE_TIME@0.85 '1976'",
+    "PERSON@0.85 'dr wynell'",
+    "PERSON@0.85 'tonja'",
+    "DATE_TIME@0.85 '5083913810'",
+    "PHONE_NUMBER@0.75 '5083913810'",
+    "US_BANK_NUMBER@0.05 '5083913810'",
+    "US_DRIVER_LICENSE@0.01 '5083913810'"
+   ],
+   "truth_sample": [
+    "name: 'aleisha douglas'",
+    "dob: '8 7 1976'",
+    "condition: 'arthritis in my knee'",
+    "gp_name: 'wynell wisozk'",
+    "relative_name: 'tonja'",
+    "phone: '5083913810'",
+    "email: 'aleisha dot douglas41 at yahoo dot com'",
+    "medication: 'hydrochlorothiazide'"
+   ]
+  },
+  {
+   "call": "CALL-000",
+   "region": "AU",
+   "scenario": "booking",
+   "rendering": "spoken",
+   "findings_sample": [
+    "DATE_TIME@0.85 'today'",
+    "PERSON@0.85 'kirk reinger'",
+    "PERSON@0.85 'kirk'",
+    "DATE_TIME@0.85 'the twenty sixth of november nineteen forty seven'",
+    "PERSON@0.85 'dr lucio'",
+    "PERSON@0.85 'jeane'",
+    "DATE_TIME@0.85 'monday 315'",
+    "PERSON@0.85 'kirk dot reinger'"
+   ],
+   "truth_sample": [
+    "name: 'kirk reinger'",
+    "dob: 'the twenty sixth of november nineteen forty seven'",
+    "phone: 'oh four five four nine five five nine eight oh'",
+    "condition: 'high cholesterol'",
+    "medication: 'simvastatin'",
+    "allergy: 'penicillin'",
+    "gp_name: 'lucio robel'",
+    "relative_name: 'jeane'",
+    "email: 'kirk dot reinger three four at bigpond dot com'"
+   ]
+  },
+  {
+   "call": "CALL-001",
+   "region": "US",
+   "scenario": "refill",
+   "rendering": "spoken",
+   "findings_sample": [
+    "DATE_TIME@0.85 'today'",
+    "PERSON@0.85 'micheal lang\n'",
+    "DATE_TIME@0.85 'august ninth'",
+    "DATE_TIME@0.85 'nineteen sixty four'",
+    "LOCATION@0.85 'boston'",
+    "LOCATION@0.85 'massachusetts'",
+    "DATE_TIME@0.85 'nine nine nine eight'"
+   ],
+   "truth_sample": [
+    "name: 'micheal lang'",
+    "dob: 'august ninth nineteen sixty four'",
+    "medication: 'atenolol'",
+    "condition: 'anaemia'",
+    "address: 'one zero six five wisozk route unit two one boston massachusetts zero two one one five'",
+    "ssn: 'nine nine nine eight seven seven seven six seven'",
+    "phone: 'six one seven seven eight two one five six three'"
+   ]
+  },
+  {
+   "call": "CALL-004",
+   "region": "AU",
+   "scenario": "billing",
+   "rendering": "spoken",
+   "findings_sample": [
+    "DATE_TIME@0.85 'today'",
+    "LOCATION@0.85 'hermiston'",
+    "DATE_TIME@0.85 'the thirty first of january nineteen ninety five'",
+    "DATE_TIME@0.85 'four eight'",
+    "LOCATION@0.85 'hermiston'",
+    "DATE_TIME@0.85 'five two'"
+   ],
+   "truth_sample": [
+    "name: 'noella hermiston'",
+    "dob: 'the thirty first of january nineteen ninety five'",
+    "medicare: 'six five four two six four two nine zero two'",
+    "address: 'four eight given tce newtown nsw two oh four two'",
+    "condition: 'high blood pressure'",
+    "medication: 'atenolol'",
+    "email: 'noella dot hermiston five two at hotmail dot com'",
+    "phone: 'oh four six three one five nine eight five four'"
+   ]
+  },
+  {
+   "call": "CALL-007",
+   "region": "US",
+   "scenario": "results",
+   "rendering": "spoken",
+   "findings_sample": [
+    "DATE_TIME@0.85 'today'",
+    "PERSON@0.85 'douglas'",
+    "DATE_TIME@0.85 'august seventh'",
+    "DATE_TIME@0.85 'nineteen seventy six'",
+    "PERSON@0.85 'dr wynell'",
+    "PERSON@0.85 'tonja'",
+    "DATE_TIME@0.85 'five oh eight'",
+    "PERSON@0.85 'douglas'"
+   ],
+   "truth_sample": [
+    "name: 'aleisha douglas'",
+    "dob: 'august seventh nineteen seventy six'",
+    "condition: 'arthritis in my knee'",
+    "gp_name: 'wynell wisozk'",
+    "relative_name: 'tonja'",
+    "phone: 'five oh eight three nine one three eight one oh'",
+    "email: 'aleisha dot douglas four one at yahoo dot com'",
+    "medication: 'hydrochlorothiazide'"
+   ]
+  }
+ ],
+ "F_call_memory": {
+  "calls_in_memory": 200,
+  "phone_lookup": {
+   "queries": 200,
+   "top1_is_a_different_patient": 199,
+   "of_which_that_patient_disclosed_health_info": 199,
+   "true_transcript_in_top3": 3,
+   "true_transcript_in_top10": 18,
+   "distinct_transcripts_returned_at_top1": 2,
+   "most_returned_top1_count": 197,
+   "samples": [
+    {
+     "query": "Incoming call from 0454 955 980",
+     "returned": "CALL-109",
+     "returned_caller": "Cherryl Jacobson",
+     "returned_condition": "arthritis in my knee"
+    },
+    {
+     "query": "Incoming call from (617) 782-1563",
+     "returned": "CALL-109",
+     "returned_caller": "Cherryl Jacobson",
+     "returned_condition": "arthritis in my knee"
+    },
+    {
+     "query": "Incoming call from 0417 635 552",
+     "returned": "CALL-109",
+     "returned_caller": "Cherryl Jacobson",
+     "returned_condition": "arthritis in my knee"
+    }
+   ]
+  },
+  "name_lookup": {
+   "queries": 200,
+   "top1_is_a_different_patient": 72,
+   "of_which_that_patient_disclosed_health_info": 72,
+   "true_transcript_in_top3": 159,
+   "true_transcript_in_top10": 179,
+   "distinct_transcripts_returned_at_top1": 131,
+   "most_returned_top1_count": 15,
+   "samples": [
+    {
+     "query": "Caller Micheal Lang",
+     "returned": "CALL-058",
+     "returned_caller": "Jermaine Lang",
+     "returned_condition": "chronic migraines"
+    },
+    {
+     "query": "Caller Noella Hermiston",
+     "returned": "CALL-168",
+     "returned_caller": "Rosalind Torp",
+     "returned_condition": "anaemia"
+    },
+    {
+     "query": "Caller Salvatore Roberts",
+     "returned": "CALL-182",
+     "returned_caller": "Homero Carrillo",
+     "returned_condition": "arthritis in my knee"
+    }
+   ]
+  },
+  "name_dob_lookup": {
+   "queries": 200,
+   "top1_is_a_different_patient": 61,
+   "of_which_that_patient_disclosed_health_info": 61,
+   "true_transcript_in_top3": 168,
+   "true_transcript_in_top10": 186,
+   "distinct_transcripts_returned_at_top1": 141,
+   "most_returned_top1_count": 14,
+   "samples": [
+    {
+     "query": "Caller Micheal Lang, date of birth August 9, 1964",
+     "returned": "CALL-027",
+     "returned_caller": "Millard Stamm",
+     "returned_condition": "anaemia"
+    },
+    {
+     "query": "Caller Noella Hermiston, date of birth 31 January 1995",
+     "returned": "CALL-037",
+     "returned_caller": "Nathanial Kuhic",
+     "returned_condition": "arthritis in my knee"
+    },
+    {
+     "query": "Caller Salvatore Roberts, date of birth May 20, 1997",
+     "returned": "CALL-182",
+     "returned_caller": "Homero Carrillo",
+     "returned_condition": "arthritis in my knee"
+    }
+   ]
+  }
+ }
+}

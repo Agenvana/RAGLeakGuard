@@ -1,0 +1,24 @@
+# Environment for the Report #3 voice-transcript store scan (September 2026 cycle).
+# Create/reuse the venv at reports/tools/voiceenv (gitignored, like chromaenv):
+#
+#   python -m venv reports/tools/voiceenv
+#   reports/tools/voiceenv/Scripts/python.exe -m pip install -r reports/tools/requirements-voice.txt
+#   (macOS: reports/tools/voiceenv/bin/python)
+#
+# chromadb / onnxruntime / tokenizers pins match requirements-chroma.txt. numpy
+# had to drop one minor version (2.5.1 -> 2.4.6) because spaCy's thinc caps it;
+# the counts this issue publishes do not depend on vector bytes. presidio-analyzer is "standard PII detection"
+# exactly as a pipeline installs it. NOTE: Presidio's default NLP configuration
+# loads en_core_web_lg and downloads it (400 MB) on first use if absent; the
+# scan therefore runs on the LARGE model, which is generous to the incumbent
+# (Report #1 ran on en_core_web_sm). Both wheels are pinned here so the rerun
+# does not depend on a silent download.
+
+chromadb==1.5.9
+numpy==2.4.6   # resolved: thinc 8.3.13 (spaCy) caps numpy below 2.5
+onnxruntime==1.28.0
+tokenizers==0.23.1
+presidio-analyzer==2.2.364
+spacy==3.8.16
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
