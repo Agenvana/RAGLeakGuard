@@ -1,0 +1,31 @@
+# Supported RAGLeakGuard runtime for the Report #4 "as shipped" configurations
+# (October 2026 cycle). RAGLeakGuard's own `detect` extra pins spaCy >=3.7,<3.8 and
+# numpy <2, which the shared scamenv (spaCy 3.8.16, numpy 2.4.6) cannot satisfy, so
+# the tool runs in its own venv built from the package's own `detect` extra (a
+# supported dependency set, not an exact lock: a fresh resolver may pick other
+# compatible versions; the versions actually measured are recorded in each raw
+# artifact), and scam_kit.py talks to it through a subprocess worker.
+#
+#   git worktree add ../RAGLeakGuard-measured 47dedfe5c6adb1134372f0f810e9a7dca4b9d8d0
+#   py -3.12 -m venv reports/tools/rlgenv                 (macOS: python3.12 -m venv ...)
+#   reports/tools/rlgenv/Scripts/python.exe -m pip install -e "../RAGLeakGuard-measured[detect]"
+#   reports/tools/rlgenv/Scripts/python.exe -m pip install -r reports/tools/requirements-rlg.txt
+#   (macOS: reports/tools/rlgenv/bin/python.) The worktree is the product at the
+#   measured commit; that commit predates the research scripts, so do not check it
+#   out in the working checkout. The commit scanned is recorded in each artifact.
+#
+# The package's own resolver picks the exact spaCy / numpy / presidio versions; the
+# versions it picked are recorded in each raw artifact under environment.ragleakguard.
+# This file only adds the spaCy model the package loads (en_core_web_sm, the 3.7
+# line that matches the spaCy pin) so the rerun does not depend on a silent download.
+
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+
+# spaCy's compiled helpers, pinned INSIDE spaCy 3.7.5's own ranges (preshed <3.1,
+# cymem <2.1, murmurhash <1.1): the newest wheels (preshed 3.0.14, cymem 2.0.16,
+# murmurhash 1.0.16) make the tokenizer fail on Windows / Python 3.12 with
+# "OverflowError: Python int too large to convert to C ssize_t" (measured 2026-10-25,
+# in both this venv and scamenv). Still the package's supported dependency set.
+preshed==3.0.13
+cymem==2.0.13
+murmurhash==1.0.15

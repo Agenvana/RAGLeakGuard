@@ -13,6 +13,8 @@ dist/
 .venv/
 venv/
 env/
+/reports/tools/scamenv/
+/reports/tools/rlgenv/
 
 # Local data / secrets — NEVER commit real data
 .env

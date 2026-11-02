@@ -1,0 +1,4913 @@
+{
+ "issue": "2026-10",
+ "run_tag": "run2",
+ "seeds": {
+  "clinic": 20260801,
+  "voice": 20260914
+ },
+ "actionable": 0.4,
+ "generated_utc": "2026-10-25T07:01:08Z",
+ "definitions": {
+  "measurement_kind": "synthetic exposure measurement: what a redacted record still shows; not evidence that any scam succeeds",
+  "deliverable": "name intact AND at least one of phone / email / address intact",
+  "core_strict": "MAIN MEASURE. deliverable AND provider AND (a particular appointment or date cue intact OR an amount intact). Appointment cues: the voice slot ('Tuesday 10:15' and the four others) and the clinic plan line 'next Tuesday'. No synthetic record carries an amount, so the tier turns on the appointment cue",
+  "core_broad": "deliverable AND provider AND any credibility detail intact (appointment cue, service interval, billing cue, the service rendered, or a billing identifier: Medicare, SSN, insurance ID)",
+  "interval_is_broad_only": "service intervals ('six-month scale and clean', 'a review in three months') count only in the broad tier",
+  "survival": "an element survives (is INTACT) only when a complete occurrence of its value has no character covered by any actionable finding; PARTIAL = no complete occurrence visible but some characters of one still visible; REMOVED = every occurrence fully covered",
+  "redaction": "character mask = union of every finding with score >= 0.4, any label; counts and redacted texture derive from the same mask, so overlapping and nested detections are handled once",
+  "clinic_appointment_cues": [
+   "next Tuesday"
+  ],
+  "clinic_interval_cues": [
+   "six-month",
+   "in three months"
+  ],
+  "clinic_billing_cues": [
+   "payment plan",
+   "health care card",
+   "cost grounds"
+  ],
+  "provider_in_clinic_store": "assumed from database context (one clinic's knowledge base); not a text span; never redactable",
+  "dob": "counted as an identifier (a verification cue), not as the kit's date cue"
+ },
+ "stores": {
+  "clinic": {
+   "records": 2000,
+   "elements_present": {
+    "name": 2000,
+    "phone": 2000,
+    "email": 2000,
+    "address": 2000,
+    "dob": 2000,
+    "medicare": 2000,
+    "ssn": 0,
+    "insurance": 0,
+    "provider": 2000,
+    "service": 2000,
+    "appointment": 357,
+    "interval": 478,
+    "billing_cue": 648,
+    "amount": 0
+   },
+   "contact_channels_per_record": {
+    "3": 2000
+   },
+   "kits_present": {
+    "deliverable": 2000,
+    "core_strict": 357,
+    "core_broad": 2000
+   },
+   "source": "chroma_erasure.build_patients (Report #2), 2,000 synthetic AU dental-clinic notes"
+  },
+  "voice_formatted": {
+   "records": 200,
+   "elements_present": {
+    "name": 200,
+    "phone": 200,
+    "email": 120,
+    "address": 80,
+    "dob": 200,
+    "medicare": 40,
+    "ssn": 19,
+    "insurance": 21,
+    "provider": 200,
+    "service": 200,
+    "appointment": 80,
+    "interval": 0,
+    "billing_cue": 40,
+    "amount": 0
+   },
+   "contact_channels_per_record": {
+    "1": 40,
+    "2": 120,
+    "3": 40
+   },
+   "kits_present": {
+    "deliverable": 200,
+    "core_strict": 80,
+    "core_broad": 200
+   },
+   "per_scenario": {
+    "billing": {
+     "deliverable": 40,
+     "core_strict": 0,
+     "core_broad": 40,
+     "records": 40
+    },
+    "booking": {
+     "deliverable": 40,
+     "core_strict": 40,
+     "core_broad": 40,
+     "records": 40
+    },
+    "refill": {
+     "deliverable": 40,
+     "core_strict": 0,
+     "core_broad": 40,
+     "records": 40
+    },
+    "reschedule": {
+     "deliverable": 40,
+     "core_strict": 40,
+     "core_broad": 40,
+     "records": 40
+    },
+    "results": {
+     "deliverable": 40,
+     "core_strict": 0,
+     "core_broad": 40,
+     "records": 40
+    }
+   },
+   "source": "voice_transcripts (Report #3), 200 synthetic receptionist calls, three renderings"
+  },
+  "voice_digits": {
+   "records": 200,
+   "elements_present": {
+    "name": 200,
+    "phone": 200,
+    "email": 120,
+    "address": 80,
+    "dob": 200,
+    "medicare": 40,
+    "ssn": 19,
+    "insurance": 21,
+    "provider": 200,
+    "service": 200,
+    "appointment": 80,
+    "interval": 0,
+    "billing_cue": 40,
+    "amount": 0
+   },
+   "contact_channels_per_record": {
+    "1": 40,
+    "2": 120,
+    "3": 40
+   },
+   "kits_present": {
+    "deliverable": 200,
+    "core_strict": 80,
+    "core_broad": 200
+   },
+   "per_scenario": {
+    "billing": {
+     "deliverable": 40,
+     "core_strict": 0,
+     "core_broad": 40,
+     "records": 40
+    },
+    "booking": {
+     "deliverable": 40,
+     "core_strict": 40,
+     "core_broad": 40,
+     "records": 40
+    },
+    "refill": {
+     "deliverable": 40,
+     "core_strict": 0,
+     "core_broad": 40,
+     "records": 40
+    },
+    "reschedule": {
+     "deliverable": 40,
+     "core_strict": 40,
+     "core_broad": 40,
+     "records": 40
+    },
+    "results": {
+     "deliverable": 40,
+     "core_strict": 0,
+     "core_broad": 40,
+     "records": 40
+    }
+   }
+  },
+  "voice_spoken": {
+   "records": 200,
+   "elements_present": {
+    "name": 200,
+    "phone": 200,
+    "email": 120,
+    "address": 80,
+    "dob": 200,
+    "medicare": 40,
+    "ssn": 19,
+    "insurance": 21,
+    "provider": 200,
+    "service": 200,
+    "appointment": 80,
+    "interval": 0,
+    "billing_cue": 40,
+    "amount": 0
+   },
+   "contact_channels_per_record": {
+    "1": 40,
+    "2": 120,
+    "3": 40
+   },
+   "kits_present": {
+    "deliverable": 200,
+    "core_strict": 80,
+    "core_broad": 200
+   },
+   "per_scenario": {
+    "billing": {
+     "deliverable": 40,
+     "core_strict": 0,
+     "core_broad": 40,
+     "records": 40
+    },
+    "booking": {
+     "deliverable": 40,
+     "core_strict": 40,
+     "core_broad": 40,
+     "records": 40
+    },
+    "refill": {
+     "deliverable": 40,
+     "core_strict": 0,
+     "core_broad": 40,
+     "records": 40
+    },
+    "reschedule": {
+     "deliverable": 40,
+     "core_strict": 40,
+     "core_broad": 40,
+     "records": 40
+    },
+    "results": {
+     "deliverable": 40,
+     "core_strict": 0,
+     "core_broad": 40,
+     "records": 40
+    }
+   }
+  }
+ },
+ "environment": {
+  "presidio_default_nlp_model": "en_core_web_lg",
+  "presidio_analyzer": "2.2.364",
+  "spacy": "3.8.16",
+  "chromadb": "1.5.9",
+  "python": "3.12.10",
+  "platform": "win32",
+  "ragleakguard_mode": {
+   "mode": "supported",
+   "note": "RAGLeakGuard runs in its own venv built from the package's `detect` extra (rlg_scan_worker.py); 'as shipped' applies",
+   "python": "<LOCAL_VENV>/Scripts/python.exe"
+  },
+  "ragleakguard": {
+   "python": "3.12.10",
+   "ragleakguard": "0.1.1",
+   "spacy": "3.7.5",
+   "numpy": "1.26.4",
+   "presidio-analyzer": "2.2.364",
+   "en-core-web-sm": "3.7.1",
+   "commit": "47dedfe5c6adb1134372f0f810e9a7dca4b9d8d0",
+   "dirty": false,
+   "root_basename": "RAGLeakGuard",
+   "venv": "<LOCAL_VENV>"
+  }
+ },
+ "scan": {
+  "clinic": {
+   "presidio_default": {
+    "records": 2000,
+    "elements": {
+     "name": {
+      "intact": 12,
+      "partial": 27,
+      "removed": 1961,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "email": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "address": {
+      "intact": 327,
+      "partial": 1673,
+      "removed": 0,
+      "absent": 0
+     },
+     "dob": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 221,
+      "partial": 155,
+      "removed": 1624,
+      "absent": 0
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 2000
+     },
+     "insurance": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 2000
+     },
+     "provider": {
+      "intact": 2000,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 1601,
+      "partial": 399,
+      "removed": 0,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 357,
+      "absent": 1643
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 307,
+      "removed": 171,
+      "absent": 1522
+     },
+     "billing_cue": {
+      "intact": 648,
+      "partial": 0,
+      "removed": 0,
+      "absent": 1352
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 2000
+     }
+    },
+    "contact_any_intact": 327,
+    "kits_intact": {
+     "deliverable": 1,
+     "core_strict": 0,
+     "core_broad": 1
+    },
+    "credibility_elements_all_intact": 1071,
+    "identifier_elements_intact_hist": {
+     "0/6": 1476,
+     "1/6": 488,
+     "2/6": 36
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 1992,
+      "LOCATION": 1
+     },
+     "phone": {
+      "PHONE_NUMBER": 2000,
+      "DATE_TIME": 659,
+      "LOCATION": 6
+     },
+     "email": {
+      "URL": 3244,
+      "EMAIL_ADDRESS": 2000,
+      "DATE_TIME": 6
+     },
+     "address": {
+      "PERSON": 1217,
+      "LOCATION": 1154,
+      "DATE_TIME": 273
+     },
+     "dob": {
+      "DATE_TIME": 2000
+     },
+     "medicare": {
+      "PHONE_NUMBER": 1610,
+      "DATE_TIME": 902,
+      "PERSON": 3
+     },
+     "service": {
+      "DATE_TIME": 399
+     },
+     "interval": {
+      "DATE_TIME": 514
+     },
+     "appointment": {
+      "DATE_TIME": 357
+     }
+    },
+    "consistency_checks_passed": 2809
+   },
+   "presidio_au_on": {
+    "records": 2000,
+    "elements": {
+     "name": {
+      "intact": 12,
+      "partial": 27,
+      "removed": 1961,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "email": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "address": {
+      "intact": 327,
+      "partial": 1673,
+      "removed": 0,
+      "absent": 0
+     },
+     "dob": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 2000
+     },
+     "insurance": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 2000
+     },
+     "provider": {
+      "intact": 2000,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 1601,
+      "partial": 399,
+      "removed": 0,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 357,
+      "absent": 1643
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 307,
+      "removed": 171,
+      "absent": 1522
+     },
+     "billing_cue": {
+      "intact": 648,
+      "partial": 0,
+      "removed": 0,
+      "absent": 1352
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 2000
+     }
+    },
+    "contact_any_intact": 327,
+    "kits_intact": {
+     "deliverable": 1,
+     "core_strict": 0,
+     "core_broad": 1
+    },
+    "credibility_elements_all_intact": 1071,
+    "identifier_elements_intact_hist": {
+     "0/6": 1662,
+     "1/6": 337,
+     "2/6": 1
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 1992,
+      "LOCATION": 1
+     },
+     "phone": {
+      "PHONE_NUMBER": 2000,
+      "DATE_TIME": 659,
+      "LOCATION": 6
+     },
+     "email": {
+      "URL": 3244,
+      "EMAIL_ADDRESS": 2000,
+      "DATE_TIME": 6
+     },
+     "address": {
+      "PERSON": 1217,
+      "LOCATION": 1154,
+      "DATE_TIME": 273
+     },
+     "dob": {
+      "DATE_TIME": 2000
+     },
+     "medicare": {
+      "AU_MEDICARE": 2000,
+      "PHONE_NUMBER": 1610,
+      "DATE_TIME": 902,
+      "PERSON": 3
+     },
+     "service": {
+      "DATE_TIME": 399
+     },
+     "interval": {
+      "DATE_TIME": 514
+     },
+     "appointment": {
+      "DATE_TIME": 357
+     }
+    },
+    "consistency_checks_passed": 2588
+   },
+   "rlg_default": {
+    "records": 2000,
+    "elements": {
+     "name": {
+      "intact": 359,
+      "partial": 30,
+      "removed": 1611,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "email": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "address": {
+      "intact": 462,
+      "partial": 1538,
+      "removed": 0,
+      "absent": 0
+     },
+     "dob": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 390,
+      "partial": 0,
+      "removed": 1610,
+      "absent": 0
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 2000
+     },
+     "insurance": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 2000
+     },
+     "provider": {
+      "intact": 2000,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 2000,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 357,
+      "partial": 0,
+      "removed": 0,
+      "absent": 1643
+     },
+     "interval": {
+      "intact": 478,
+      "partial": 0,
+      "removed": 0,
+      "absent": 1522
+     },
+     "billing_cue": {
+      "intact": 648,
+      "partial": 0,
+      "removed": 0,
+      "absent": 1352
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 2000
+     }
+    },
+    "contact_any_intact": 462,
+    "kits_intact": {
+     "deliverable": 80,
+     "core_strict": 13,
+     "core_broad": 80
+    },
+    "credibility_elements_all_intact": 2000,
+    "identifier_elements_intact_hist": {
+     "0/6": 1020,
+     "1/6": 761,
+     "2/6": 207,
+     "3/6": 12
+    },
+    "labels_on_elements": {
+     "phone": {
+      "PHONE_NUMBER": 2000
+     },
+     "email": {
+      "EMAIL_ADDRESS": 2000
+     },
+     "address": {
+      "PERSON": 1681,
+      "LOCATION": 256
+     },
+     "dob": {
+      "DATE_TIME": 1985,
+      "PERSON": 15
+     },
+     "medicare": {
+      "PHONE_NUMBER": 1610
+     },
+     "name": {
+      "PERSON": 1634,
+      "LOCATION": 7
+     }
+    },
+    "consistency_checks_passed": 4694
+   },
+   "rlg_au": {
+    "records": 2000,
+    "elements": {
+     "name": {
+      "intact": 359,
+      "partial": 30,
+      "removed": 1611,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "email": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "address": {
+      "intact": 462,
+      "partial": 1538,
+      "removed": 0,
+      "absent": 0
+     },
+     "dob": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 2000,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 390,
+      "partial": 0,
+      "removed": 1610,
+      "absent": 0
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 2000
+     },
+     "insurance": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 2000
+     },
+     "provider": {
+      "intact": 2000,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 2000,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 357,
+      "partial": 0,
+      "removed": 0,
+      "absent": 1643
+     },
+     "interval": {
+      "intact": 478,
+      "partial": 0,
+      "removed": 0,
+      "absent": 1522
+     },
+     "billing_cue": {
+      "intact": 648,
+      "partial": 0,
+      "removed": 0,
+      "absent": 1352
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 2000
+     }
+    },
+    "contact_any_intact": 462,
+    "kits_intact": {
+     "deliverable": 80,
+     "core_strict": 13,
+     "core_broad": 80
+    },
+    "credibility_elements_all_intact": 2000,
+    "identifier_elements_intact_hist": {
+     "0/6": 1020,
+     "1/6": 761,
+     "2/6": 207,
+     "3/6": 12
+    },
+    "labels_on_elements": {
+     "phone": {
+      "AU_PHONE": 2000
+     },
+     "email": {
+      "EMAIL_ADDRESS": 2000
+     },
+     "address": {
+      "PERSON": 1681,
+      "LOCATION": 256
+     },
+     "dob": {
+      "DATE_TIME": 1985,
+      "PERSON": 15
+     },
+     "medicare": {
+      "PHONE_NUMBER": 1610
+     },
+     "name": {
+      "PERSON": 1634,
+      "LOCATION": 7
+     }
+    },
+    "consistency_checks_passed": 4694
+   }
+  },
+  "voice_formatted": {
+   "presidio_default": {
+    "records": 200,
+    "elements": {
+     "name": {
+      "intact": 13,
+      "partial": 1,
+      "removed": 186,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 200,
+      "absent": 0
+     },
+     "email": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 120,
+      "absent": 80
+     },
+     "address": {
+      "intact": 6,
+      "partial": 74,
+      "removed": 0,
+      "absent": 120
+     },
+     "dob": {
+      "intact": 0,
+      "partial": 13,
+      "removed": 187,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 3,
+      "partial": 2,
+      "removed": 35,
+      "absent": 160
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 19,
+      "absent": 181
+     },
+     "insurance": {
+      "intact": 17,
+      "partial": 4,
+      "removed": 0,
+      "absent": 179
+     },
+     "provider": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 0,
+      "partial": 73,
+      "removed": 7,
+      "absent": 120
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     },
+     "billing_cue": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     }
+    },
+    "contact_any_intact": 6,
+    "kits_intact": {
+     "deliverable": 0,
+     "core_strict": 0,
+     "core_broad": 0
+    },
+    "credibility_elements_all_intact": 120,
+    "identifier_elements_intact_hist": {
+     "0/3": 38,
+     "0/4": 73,
+     "0/5": 30,
+     "0/6": 23,
+     "1/3": 2,
+     "1/4": 7,
+     "1/5": 10,
+     "1/6": 14,
+     "2/6": 3
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 183,
+      "LOCATION": 4
+     },
+     "phone": {
+      "PHONE_NUMBER": 200,
+      "DATE_TIME": 41
+     },
+     "email": {
+      "URL": 181,
+      "EMAIL_ADDRESS": 120,
+      "LOCATION": 3,
+      "PERSON": 1
+     },
+     "dob": {
+      "DATE_TIME": 200
+     },
+     "appointment": {
+      "DATE_TIME": 132
+     },
+     "address": {
+      "LOCATION": 118,
+      "PERSON": 30,
+      "DATE_TIME": 14
+     },
+     "ssn": {
+      "US_SSN": 19,
+      "US_ITIN": 10
+     },
+     "medicare": {
+      "PHONE_NUMBER": 31,
+      "DATE_TIME": 30
+     },
+     "insurance": {
+      "DATE_TIME": 3,
+      "PHONE_NUMBER": 2,
+      "LOCATION": 1
+     }
+    },
+    "consistency_checks_passed": 479,
+    "per_scenario": {
+     "billing": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "booking": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "refill": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "reschedule": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "results": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     }
+    }
+   },
+   "presidio_au_on": {
+    "records": 200,
+    "elements": {
+     "name": {
+      "intact": 13,
+      "partial": 1,
+      "removed": 186,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 200,
+      "absent": 0
+     },
+     "email": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 120,
+      "absent": 80
+     },
+     "address": {
+      "intact": 6,
+      "partial": 74,
+      "removed": 0,
+      "absent": 120
+     },
+     "dob": {
+      "intact": 0,
+      "partial": 13,
+      "removed": 187,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 40,
+      "absent": 160
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 19,
+      "absent": 181
+     },
+     "insurance": {
+      "intact": 15,
+      "partial": 6,
+      "removed": 0,
+      "absent": 179
+     },
+     "provider": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 0,
+      "partial": 73,
+      "removed": 7,
+      "absent": 120
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     },
+     "billing_cue": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     }
+    },
+    "contact_any_intact": 6,
+    "kits_intact": {
+     "deliverable": 0,
+     "core_strict": 0,
+     "core_broad": 0
+    },
+    "credibility_elements_all_intact": 120,
+    "identifier_elements_intact_hist": {
+     "0/3": 38,
+     "0/4": 73,
+     "0/5": 31,
+     "0/6": 25,
+     "1/3": 2,
+     "1/4": 7,
+     "1/5": 9,
+     "1/6": 14,
+     "2/6": 1
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 183,
+      "LOCATION": 4
+     },
+     "phone": {
+      "PHONE_NUMBER": 200,
+      "DATE_TIME": 41
+     },
+     "email": {
+      "URL": 181,
+      "EMAIL_ADDRESS": 120,
+      "LOCATION": 3,
+      "PERSON": 1
+     },
+     "dob": {
+      "DATE_TIME": 200
+     },
+     "appointment": {
+      "DATE_TIME": 132
+     },
+     "address": {
+      "LOCATION": 118,
+      "PERSON": 30,
+      "DATE_TIME": 14
+     },
+     "ssn": {
+      "US_SSN": 19,
+      "US_ITIN": 10
+     },
+     "medicare": {
+      "AU_MEDICARE": 40,
+      "PHONE_NUMBER": 31,
+      "DATE_TIME": 30
+     },
+     "insurance": {
+      "DATE_TIME": 3,
+      "AU_TFN": 2,
+      "PHONE_NUMBER": 2,
+      "LOCATION": 1,
+      "AU_ACN": 1
+     }
+    },
+    "consistency_checks_passed": 474,
+    "per_scenario": {
+     "billing": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "booking": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "refill": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "reschedule": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "results": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     }
+    }
+   },
+   "rlg_default": {
+    "records": 200,
+    "elements": {
+     "name": {
+      "intact": 17,
+      "partial": 1,
+      "removed": 182,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 0,
+      "partial": 17,
+      "removed": 183,
+      "absent": 0
+     },
+     "email": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 120,
+      "absent": 80
+     },
+     "address": {
+      "intact": 17,
+      "partial": 63,
+      "removed": 0,
+      "absent": 120
+     },
+     "dob": {
+      "intact": 1,
+      "partial": 6,
+      "removed": 193,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 9,
+      "partial": 0,
+      "removed": 31,
+      "absent": 160
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 19,
+      "absent": 181
+     },
+     "insurance": {
+      "intact": 19,
+      "partial": 2,
+      "removed": 0,
+      "absent": 179
+     },
+     "provider": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 199,
+      "partial": 0,
+      "removed": 1,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 80,
+      "partial": 0,
+      "removed": 0,
+      "absent": 120
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     },
+     "billing_cue": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     }
+    },
+    "contact_any_intact": 17,
+    "kits_intact": {
+     "deliverable": 1,
+     "core_strict": 0,
+     "core_broad": 1
+    },
+    "credibility_elements_all_intact": 199,
+    "identifier_elements_intact_hist": {
+     "0/3": 36,
+     "0/4": 75,
+     "0/5": 21,
+     "0/6": 13,
+     "1/3": 4,
+     "1/4": 5,
+     "1/5": 14,
+     "1/6": 25,
+     "2/5": 4,
+     "2/6": 2,
+     "3/5": 1
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 177,
+      "LOCATION": 3,
+      "NRP": 3
+     },
+     "phone": {
+      "PHONE_NUMBER": 183,
+      "DATE_TIME": 17
+     },
+     "email": {
+      "EMAIL_ADDRESS": 120
+     },
+     "dob": {
+      "DATE_TIME": 199
+     },
+     "address": {
+      "LOCATION": 79,
+      "PERSON": 34
+     },
+     "ssn": {
+      "US_SSN": 19
+     },
+     "medicare": {
+      "PHONE_NUMBER": 31
+     },
+     "insurance": {
+      "PHONE_NUMBER": 2
+     },
+     "service": {
+      "PERSON": 1
+     }
+    },
+    "consistency_checks_passed": 582,
+    "per_scenario": {
+     "billing": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "booking": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "refill": {
+      "deliverable": 1,
+      "core_strict": 0,
+      "core_broad": 1,
+      "records": 40
+     },
+     "reschedule": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "results": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     }
+    }
+   },
+   "rlg_au": {
+    "records": 200,
+    "elements": {
+     "name": {
+      "intact": 17,
+      "partial": 1,
+      "removed": 182,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 0,
+      "partial": 17,
+      "removed": 183,
+      "absent": 0
+     },
+     "email": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 120,
+      "absent": 80
+     },
+     "address": {
+      "intact": 17,
+      "partial": 63,
+      "removed": 0,
+      "absent": 120
+     },
+     "dob": {
+      "intact": 1,
+      "partial": 6,
+      "removed": 193,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 9,
+      "partial": 0,
+      "removed": 31,
+      "absent": 160
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 19,
+      "absent": 181
+     },
+     "insurance": {
+      "intact": 17,
+      "partial": 4,
+      "removed": 0,
+      "absent": 179
+     },
+     "provider": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 199,
+      "partial": 0,
+      "removed": 1,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 80,
+      "partial": 0,
+      "removed": 0,
+      "absent": 120
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     },
+     "billing_cue": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     }
+    },
+    "contact_any_intact": 17,
+    "kits_intact": {
+     "deliverable": 1,
+     "core_strict": 0,
+     "core_broad": 1
+    },
+    "credibility_elements_all_intact": 199,
+    "identifier_elements_intact_hist": {
+     "0/3": 36,
+     "0/4": 75,
+     "0/5": 21,
+     "0/6": 14,
+     "1/3": 4,
+     "1/4": 5,
+     "1/5": 15,
+     "1/6": 24,
+     "2/5": 3,
+     "2/6": 2,
+     "3/5": 1
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 177,
+      "LOCATION": 3,
+      "NRP": 3
+     },
+     "phone": {
+      "AU_PHONE": 100,
+      "PHONE_NUMBER": 83,
+      "DATE_TIME": 17
+     },
+     "email": {
+      "EMAIL_ADDRESS": 120
+     },
+     "dob": {
+      "DATE_TIME": 199
+     },
+     "address": {
+      "LOCATION": 79,
+      "PERSON": 34
+     },
+     "ssn": {
+      "US_SSN": 19
+     },
+     "medicare": {
+      "PHONE_NUMBER": 31
+     },
+     "insurance": {
+      "AU_TFN": 2,
+      "PHONE_NUMBER": 1,
+      "AU_ACN": 1
+     },
+     "service": {
+      "PERSON": 1
+     }
+    },
+    "consistency_checks_passed": 580,
+    "per_scenario": {
+     "billing": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "booking": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "refill": {
+      "deliverable": 1,
+      "core_strict": 0,
+      "core_broad": 1,
+      "records": 40
+     },
+     "reschedule": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "results": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     }
+    }
+   }
+  },
+  "voice_digits": {
+   "presidio_default": {
+    "records": 200,
+    "elements": {
+     "name": {
+      "intact": 51,
+      "partial": 20,
+      "removed": 129,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 200,
+      "absent": 0
+     },
+     "email": {
+      "intact": 59,
+      "partial": 61,
+      "removed": 0,
+      "absent": 80
+     },
+     "address": {
+      "intact": 21,
+      "partial": 59,
+      "removed": 0,
+      "absent": 120
+     },
+     "dob": {
+      "intact": 9,
+      "partial": 83,
+      "removed": 108,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 3,
+      "partial": 0,
+      "removed": 37,
+      "absent": 160
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 19,
+      "absent": 181
+     },
+     "insurance": {
+      "intact": 18,
+      "partial": 1,
+      "removed": 2,
+      "absent": 179
+     },
+     "provider": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 0,
+      "partial": 35,
+      "removed": 45,
+      "absent": 120
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     },
+     "billing_cue": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     }
+    },
+    "contact_any_intact": 71,
+    "kits_intact": {
+     "deliverable": 24,
+     "core_strict": 0,
+     "core_broad": 24
+    },
+    "credibility_elements_all_intact": 120,
+    "identifier_elements_intact_hist": {
+     "0/3": 28,
+     "0/4": 38,
+     "0/5": 16,
+     "0/6": 10,
+     "1/3": 10,
+     "1/4": 30,
+     "1/5": 18,
+     "1/6": 10,
+     "2/3": 2,
+     "2/4": 11,
+     "2/5": 6,
+     "2/6": 10,
+     "3/4": 1,
+     "3/6": 8,
+     "4/6": 2
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 142,
+      "LOCATION": 7,
+      "NRP": 1
+     },
+     "phone": {
+      "PHONE_NUMBER": 200,
+      "DATE_TIME": 93,
+      "UK_NHS": 22,
+      "LOCATION": 1,
+      "PERSON": 1
+     },
+     "email": {
+      "PERSON": 60,
+      "LOCATION": 1,
+      "NRP": 1
+     },
+     "dob": {
+      "DATE_TIME": 190,
+      "PHONE_NUMBER": 4,
+      "PERSON": 1
+     },
+     "appointment": {
+      "DATE_TIME": 80
+     },
+     "address": {
+      "LOCATION": 61,
+      "PERSON": 18,
+      "DATE_TIME": 14,
+      "NRP": 1
+     },
+     "ssn": {
+      "US_SSN": 19,
+      "US_BANK_NUMBER": 13,
+      "DATE_TIME": 5
+     },
+     "medicare": {
+      "PHONE_NUMBER": 31,
+      "US_BANK_NUMBER": 20,
+      "DATE_TIME": 8,
+      "UK_NHS": 4
+     },
+     "insurance": {
+      "PERSON": 2,
+      "MEDICAL_LICENSE": 1
+     }
+    },
+    "consistency_checks_passed": 601,
+    "per_scenario": {
+     "billing": {
+      "deliverable": 9,
+      "core_strict": 0,
+      "core_broad": 9,
+      "records": 40
+     },
+     "booking": {
+      "deliverable": 7,
+      "core_strict": 0,
+      "core_broad": 7,
+      "records": 40
+     },
+     "refill": {
+      "deliverable": 4,
+      "core_strict": 0,
+      "core_broad": 4,
+      "records": 40
+     },
+     "reschedule": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "results": {
+      "deliverable": 4,
+      "core_strict": 0,
+      "core_broad": 4,
+      "records": 40
+     }
+    }
+   },
+   "presidio_au_on": {
+    "records": 200,
+    "elements": {
+     "name": {
+      "intact": 51,
+      "partial": 20,
+      "removed": 129,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 200,
+      "absent": 0
+     },
+     "email": {
+      "intact": 59,
+      "partial": 61,
+      "removed": 0,
+      "absent": 80
+     },
+     "address": {
+      "intact": 21,
+      "partial": 59,
+      "removed": 0,
+      "absent": 120
+     },
+     "dob": {
+      "intact": 9,
+      "partial": 83,
+      "removed": 108,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 40,
+      "absent": 160
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 19,
+      "absent": 181
+     },
+     "insurance": {
+      "intact": 18,
+      "partial": 1,
+      "removed": 2,
+      "absent": 179
+     },
+     "provider": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 0,
+      "partial": 35,
+      "removed": 45,
+      "absent": 120
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     },
+     "billing_cue": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     }
+    },
+    "contact_any_intact": 71,
+    "kits_intact": {
+     "deliverable": 24,
+     "core_strict": 0,
+     "core_broad": 24
+    },
+    "credibility_elements_all_intact": 120,
+    "identifier_elements_intact_hist": {
+     "0/3": 28,
+     "0/4": 38,
+     "0/5": 16,
+     "0/6": 10,
+     "1/3": 10,
+     "1/4": 30,
+     "1/5": 18,
+     "1/6": 11,
+     "2/3": 2,
+     "2/4": 11,
+     "2/5": 6,
+     "2/6": 11,
+     "3/4": 1,
+     "3/6": 6,
+     "4/6": 2
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 142,
+      "LOCATION": 7,
+      "NRP": 1
+     },
+     "phone": {
+      "PHONE_NUMBER": 200,
+      "DATE_TIME": 93,
+      "UK_NHS": 22,
+      "AU_MEDICARE": 9,
+      "LOCATION": 1,
+      "PERSON": 1
+     },
+     "email": {
+      "PERSON": 60,
+      "LOCATION": 1,
+      "NRP": 1
+     },
+     "dob": {
+      "DATE_TIME": 190,
+      "PHONE_NUMBER": 5,
+      "PERSON": 1
+     },
+     "appointment": {
+      "DATE_TIME": 80
+     },
+     "address": {
+      "LOCATION": 61,
+      "PERSON": 18,
+      "DATE_TIME": 14,
+      "NRP": 1
+     },
+     "ssn": {
+      "US_SSN": 19,
+      "US_BANK_NUMBER": 13,
+      "DATE_TIME": 5,
+      "AU_TFN": 1,
+      "AU_ACN": 1
+     },
+     "medicare": {
+      "AU_MEDICARE": 40,
+      "PHONE_NUMBER": 31,
+      "US_BANK_NUMBER": 20,
+      "DATE_TIME": 8,
+      "UK_NHS": 4
+     },
+     "insurance": {
+      "PERSON": 2,
+      "MEDICAL_LICENSE": 1
+     }
+    },
+    "consistency_checks_passed": 598,
+    "per_scenario": {
+     "billing": {
+      "deliverable": 9,
+      "core_strict": 0,
+      "core_broad": 9,
+      "records": 40
+     },
+     "booking": {
+      "deliverable": 7,
+      "core_strict": 0,
+      "core_broad": 7,
+      "records": 40
+     },
+     "refill": {
+      "deliverable": 4,
+      "core_strict": 0,
+      "core_broad": 4,
+      "records": 40
+     },
+     "reschedule": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "results": {
+      "deliverable": 4,
+      "core_strict": 0,
+      "core_broad": 4,
+      "records": 40
+     }
+    }
+   },
+   "rlg_default": {
+    "records": 200,
+    "elements": {
+     "name": {
+      "intact": 159,
+      "partial": 10,
+      "removed": 31,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 200,
+      "absent": 0
+     },
+     "email": {
+      "intact": 61,
+      "partial": 59,
+      "removed": 0,
+      "absent": 80
+     },
+     "address": {
+      "intact": 56,
+      "partial": 24,
+      "removed": 0,
+      "absent": 120
+     },
+     "dob": {
+      "intact": 199,
+      "partial": 0,
+      "removed": 1,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 7,
+      "partial": 0,
+      "removed": 33,
+      "absent": 160
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 19,
+      "absent": 181
+     },
+     "insurance": {
+      "intact": 17,
+      "partial": 1,
+      "removed": 3,
+      "absent": 179
+     },
+     "provider": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 199,
+      "partial": 0,
+      "removed": 1,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 80,
+      "partial": 0,
+      "removed": 0,
+      "absent": 120
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     },
+     "billing_cue": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     }
+    },
+    "contact_any_intact": 104,
+    "kits_intact": {
+     "deliverable": 82,
+     "core_strict": 12,
+     "core_broad": 82
+    },
+    "credibility_elements_all_intact": 199,
+    "identifier_elements_intact_hist": {
+     "1/3": 5,
+     "1/4": 14,
+     "1/5": 1,
+     "2/3": 35,
+     "2/4": 38,
+     "2/5": 10,
+     "2/6": 5,
+     "3/4": 28,
+     "3/5": 27,
+     "3/6": 17,
+     "4/5": 2,
+     "4/6": 11,
+     "5/6": 7
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 34,
+      "LOCATION": 6,
+      "NRP": 2
+     },
+     "phone": {
+      "PHONE_NUMBER": 198,
+      "PERSON": 2
+     },
+     "email": {
+      "PERSON": 44,
+      "LOCATION": 14,
+      "NRP": 4
+     },
+     "address": {
+      "LOCATION": 20,
+      "PERSON": 7,
+      "NRP": 2
+     },
+     "ssn": {
+      "US_SSN": 9,
+      "US_BANK_NUMBER": 9,
+      "PERSON": 1
+     },
+     "medicare": {
+      "PHONE_NUMBER": 31,
+      "US_BANK_NUMBER": 2
+     },
+     "insurance": {
+      "PERSON": 3,
+      "MEDICAL_LICENSE": 1
+     },
+     "dob": {
+      "PHONE_NUMBER": 1
+     },
+     "service": {
+      "PERSON": 1
+     }
+    },
+    "consistency_checks_passed": 1018,
+    "per_scenario": {
+     "billing": {
+      "deliverable": 30,
+      "core_strict": 0,
+      "core_broad": 30,
+      "records": 40
+     },
+     "booking": {
+      "deliverable": 12,
+      "core_strict": 12,
+      "core_broad": 12,
+      "records": 40
+     },
+     "refill": {
+      "deliverable": 24,
+      "core_strict": 0,
+      "core_broad": 24,
+      "records": 40
+     },
+     "reschedule": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "results": {
+      "deliverable": 16,
+      "core_strict": 0,
+      "core_broad": 16,
+      "records": 40
+     }
+    }
+   },
+   "rlg_au": {
+    "records": 200,
+    "elements": {
+     "name": {
+      "intact": 159,
+      "partial": 10,
+      "removed": 31,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 200,
+      "absent": 0
+     },
+     "email": {
+      "intact": 61,
+      "partial": 59,
+      "removed": 0,
+      "absent": 80
+     },
+     "address": {
+      "intact": 56,
+      "partial": 24,
+      "removed": 0,
+      "absent": 120
+     },
+     "dob": {
+      "intact": 199,
+      "partial": 0,
+      "removed": 1,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 40,
+      "absent": 160
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 19,
+      "absent": 181
+     },
+     "insurance": {
+      "intact": 17,
+      "partial": 1,
+      "removed": 3,
+      "absent": 179
+     },
+     "provider": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 199,
+      "partial": 0,
+      "removed": 1,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 80,
+      "partial": 0,
+      "removed": 0,
+      "absent": 120
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     },
+     "billing_cue": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     }
+    },
+    "contact_any_intact": 104,
+    "kits_intact": {
+     "deliverable": 82,
+     "core_strict": 12,
+     "core_broad": 82
+    },
+    "credibility_elements_all_intact": 199,
+    "identifier_elements_intact_hist": {
+     "1/3": 5,
+     "1/4": 14,
+     "1/5": 1,
+     "2/3": 35,
+     "2/4": 38,
+     "2/5": 10,
+     "2/6": 6,
+     "3/4": 28,
+     "3/5": 27,
+     "3/6": 18,
+     "4/5": 2,
+     "4/6": 13,
+     "5/6": 3
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 34,
+      "LOCATION": 6,
+      "NRP": 2
+     },
+     "phone": {
+      "AU_PHONE": 100,
+      "AU_MEDICARE": 62,
+      "PHONE_NUMBER": 37,
+      "PERSON": 1
+     },
+     "email": {
+      "PERSON": 44,
+      "LOCATION": 14,
+      "NRP": 4
+     },
+     "address": {
+      "LOCATION": 20,
+      "PERSON": 7,
+      "NRP": 2
+     },
+     "ssn": {
+      "US_SSN": 12,
+      "US_BANK_NUMBER": 4,
+      "AU_TFN": 1,
+      "AU_ACN": 1,
+      "PERSON": 1
+     },
+     "medicare": {
+      "AU_MEDICARE": 40
+     },
+     "insurance": {
+      "PERSON": 3,
+      "MEDICAL_LICENSE": 1
+     },
+     "dob": {
+      "PHONE_NUMBER": 1
+     },
+     "service": {
+      "PERSON": 1
+     }
+    },
+    "consistency_checks_passed": 1011,
+    "per_scenario": {
+     "billing": {
+      "deliverable": 30,
+      "core_strict": 0,
+      "core_broad": 30,
+      "records": 40
+     },
+     "booking": {
+      "deliverable": 12,
+      "core_strict": 12,
+      "core_broad": 12,
+      "records": 40
+     },
+     "refill": {
+      "deliverable": 24,
+      "core_strict": 0,
+      "core_broad": 24,
+      "records": 40
+     },
+     "reschedule": {
+      "deliverable": 0,
+      "core_strict": 0,
+      "core_broad": 0,
+      "records": 40
+     },
+     "results": {
+      "deliverable": 16,
+      "core_strict": 0,
+      "core_broad": 16,
+      "records": 40
+     }
+    }
+   }
+  },
+  "voice_spoken": {
+   "presidio_default": {
+    "records": 200,
+    "elements": {
+     "name": {
+      "intact": 50,
+      "partial": 20,
+      "removed": 130,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 134,
+      "partial": 66,
+      "removed": 0,
+      "absent": 0
+     },
+     "email": {
+      "intact": 44,
+      "partial": 76,
+      "removed": 0,
+      "absent": 80
+     },
+     "address": {
+      "intact": 20,
+      "partial": 60,
+      "removed": 0,
+      "absent": 120
+     },
+     "dob": {
+      "intact": 12,
+      "partial": 60,
+      "removed": 128,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 20,
+      "partial": 20,
+      "removed": 0,
+      "absent": 160
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 19,
+      "removed": 0,
+      "absent": 181
+     },
+     "insurance": {
+      "intact": 14,
+      "partial": 7,
+      "removed": 0,
+      "absent": 179
+     },
+     "provider": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 0,
+      "partial": 35,
+      "removed": 45,
+      "absent": 120
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     },
+     "billing_cue": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     }
+    },
+    "contact_any_intact": 150,
+    "kits_intact": {
+     "deliverable": 42,
+     "core_strict": 0,
+     "core_broad": 42
+    },
+    "credibility_elements_all_intact": 120,
+    "identifier_elements_intact_hist": {
+     "0/3": 15,
+     "0/4": 10,
+     "0/5": 6,
+     "0/6": 3,
+     "1/3": 16,
+     "1/4": 38,
+     "1/5": 8,
+     "1/6": 12,
+     "2/3": 9,
+     "2/4": 26,
+     "2/5": 18,
+     "2/6": 13,
+     "3/4": 6,
+     "3/5": 4,
+     "3/6": 7,
+     "4/5": 4,
+     "4/6": 4,
+     "5/6": 1
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 143,
+      "LOCATION": 7,
+      "NRP": 1
+     },
+     "email": {
+      "PERSON": 63,
+      "DATE_TIME": 29,
+      "LOCATION": 1
+     },
+     "dob": {
+      "DATE_TIME": 209,
+      "PERSON": 3
+     },
+     "appointment": {
+      "DATE_TIME": 80
+     },
+     "address": {
+      "LOCATION": 70,
+      "PERSON": 18,
+      "DATE_TIME": 15
+     },
+     "ssn": {
+      "DATE_TIME": 19
+     },
+     "phone": {
+      "DATE_TIME": 66
+     },
+     "medicare": {
+      "DATE_TIME": 20
+     },
+     "insurance": {
+      "DATE_TIME": 8
+     }
+    },
+    "consistency_checks_passed": 734,
+    "per_scenario": {
+     "billing": {
+      "deliverable": 8,
+      "core_strict": 0,
+      "core_broad": 8,
+      "records": 40
+     },
+     "booking": {
+      "deliverable": 5,
+      "core_strict": 0,
+      "core_broad": 5,
+      "records": 40
+     },
+     "refill": {
+      "deliverable": 16,
+      "core_strict": 0,
+      "core_broad": 16,
+      "records": 40
+     },
+     "reschedule": {
+      "deliverable": 9,
+      "core_strict": 0,
+      "core_broad": 9,
+      "records": 40
+     },
+     "results": {
+      "deliverable": 4,
+      "core_strict": 0,
+      "core_broad": 4,
+      "records": 40
+     }
+    }
+   },
+   "presidio_au_on": {
+    "records": 200,
+    "elements": {
+     "name": {
+      "intact": 50,
+      "partial": 20,
+      "removed": 130,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 134,
+      "partial": 66,
+      "removed": 0,
+      "absent": 0
+     },
+     "email": {
+      "intact": 44,
+      "partial": 76,
+      "removed": 0,
+      "absent": 80
+     },
+     "address": {
+      "intact": 20,
+      "partial": 60,
+      "removed": 0,
+      "absent": 120
+     },
+     "dob": {
+      "intact": 12,
+      "partial": 60,
+      "removed": 128,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 20,
+      "partial": 20,
+      "removed": 0,
+      "absent": 160
+     },
+     "ssn": {
+      "intact": 0,
+      "partial": 19,
+      "removed": 0,
+      "absent": 181
+     },
+     "insurance": {
+      "intact": 14,
+      "partial": 7,
+      "removed": 0,
+      "absent": 179
+     },
+     "provider": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 0,
+      "partial": 35,
+      "removed": 45,
+      "absent": 120
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     },
+     "billing_cue": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     }
+    },
+    "contact_any_intact": 150,
+    "kits_intact": {
+     "deliverable": 42,
+     "core_strict": 0,
+     "core_broad": 42
+    },
+    "credibility_elements_all_intact": 120,
+    "identifier_elements_intact_hist": {
+     "0/3": 15,
+     "0/4": 10,
+     "0/5": 6,
+     "0/6": 3,
+     "1/3": 16,
+     "1/4": 38,
+     "1/5": 8,
+     "1/6": 12,
+     "2/3": 9,
+     "2/4": 26,
+     "2/5": 18,
+     "2/6": 13,
+     "3/4": 6,
+     "3/5": 4,
+     "3/6": 7,
+     "4/5": 4,
+     "4/6": 4,
+     "5/6": 1
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 143,
+      "LOCATION": 7,
+      "NRP": 1
+     },
+     "email": {
+      "PERSON": 63,
+      "DATE_TIME": 29,
+      "LOCATION": 1
+     },
+     "dob": {
+      "DATE_TIME": 209,
+      "PERSON": 3
+     },
+     "appointment": {
+      "DATE_TIME": 80
+     },
+     "address": {
+      "LOCATION": 70,
+      "PERSON": 18,
+      "DATE_TIME": 15
+     },
+     "ssn": {
+      "DATE_TIME": 19
+     },
+     "phone": {
+      "DATE_TIME": 66
+     },
+     "medicare": {
+      "DATE_TIME": 20
+     },
+     "insurance": {
+      "DATE_TIME": 8
+     }
+    },
+    "consistency_checks_passed": 734,
+    "per_scenario": {
+     "billing": {
+      "deliverable": 8,
+      "core_strict": 0,
+      "core_broad": 8,
+      "records": 40
+     },
+     "booking": {
+      "deliverable": 5,
+      "core_strict": 0,
+      "core_broad": 5,
+      "records": 40
+     },
+     "refill": {
+      "deliverable": 16,
+      "core_strict": 0,
+      "core_broad": 16,
+      "records": 40
+     },
+     "reschedule": {
+      "deliverable": 9,
+      "core_strict": 0,
+      "core_broad": 9,
+      "records": 40
+     },
+     "results": {
+      "deliverable": 4,
+      "core_strict": 0,
+      "core_broad": 4,
+      "records": 40
+     }
+    }
+   },
+   "rlg_default": {
+    "records": 200,
+    "elements": {
+     "name": {
+      "intact": 156,
+      "partial": 10,
+      "removed": 34,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "email": {
+      "intact": 106,
+      "partial": 14,
+      "removed": 0,
+      "absent": 80
+     },
+     "address": {
+      "intact": 51,
+      "partial": 29,
+      "removed": 0,
+      "absent": 120
+     },
+     "dob": {
+      "intact": 25,
+      "partial": 39,
+      "removed": 136,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "ssn": {
+      "intact": 19,
+      "partial": 0,
+      "removed": 0,
+      "absent": 181
+     },
+     "insurance": {
+      "intact": 21,
+      "partial": 0,
+      "removed": 0,
+      "absent": 179
+     },
+     "provider": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 199,
+      "partial": 0,
+      "removed": 1,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 80,
+      "partial": 0,
+      "removed": 0,
+      "absent": 120
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     },
+     "billing_cue": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     }
+    },
+    "contact_any_intact": 200,
+    "kits_intact": {
+     "deliverable": 156,
+     "core_strict": 60,
+     "core_broad": 156
+    },
+    "credibility_elements_all_intact": 199,
+    "identifier_elements_intact_hist": {
+     "1/3": 4,
+     "1/4": 6,
+     "2/3": 34,
+     "2/4": 20,
+     "2/6": 2,
+     "3/3": 2,
+     "3/4": 42,
+     "3/5": 17,
+     "3/6": 4,
+     "4/4": 12,
+     "4/5": 23,
+     "4/6": 12,
+     "5/6": 19,
+     "6/6": 3
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 37,
+      "LOCATION": 6,
+      "NRP": 2
+     },
+     "dob": {
+      "DATE_TIME": 175
+     },
+     "address": {
+      "LOCATION": 29,
+      "PERSON": 6
+     },
+     "email": {
+      "PERSON": 8,
+      "LOCATION": 5,
+      "NRP": 2
+     },
+     "service": {
+      "PERSON": 1
+     }
+    },
+    "consistency_checks_passed": 1137,
+    "per_scenario": {
+     "billing": {
+      "deliverable": 34,
+      "core_strict": 0,
+      "core_broad": 34,
+      "records": 40
+     },
+     "booking": {
+      "deliverable": 24,
+      "core_strict": 24,
+      "core_broad": 24,
+      "records": 40
+     },
+     "refill": {
+      "deliverable": 35,
+      "core_strict": 0,
+      "core_broad": 35,
+      "records": 40
+     },
+     "reschedule": {
+      "deliverable": 36,
+      "core_strict": 36,
+      "core_broad": 36,
+      "records": 40
+     },
+     "results": {
+      "deliverable": 27,
+      "core_strict": 0,
+      "core_broad": 27,
+      "records": 40
+     }
+    }
+   },
+   "rlg_au": {
+    "records": 200,
+    "elements": {
+     "name": {
+      "intact": 156,
+      "partial": 10,
+      "removed": 34,
+      "absent": 0
+     },
+     "phone": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "email": {
+      "intact": 106,
+      "partial": 14,
+      "removed": 0,
+      "absent": 80
+     },
+     "address": {
+      "intact": 51,
+      "partial": 29,
+      "removed": 0,
+      "absent": 120
+     },
+     "dob": {
+      "intact": 25,
+      "partial": 39,
+      "removed": 136,
+      "absent": 0
+     },
+     "medicare": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "ssn": {
+      "intact": 19,
+      "partial": 0,
+      "removed": 0,
+      "absent": 181
+     },
+     "insurance": {
+      "intact": 21,
+      "partial": 0,
+      "removed": 0,
+      "absent": 179
+     },
+     "provider": {
+      "intact": 200,
+      "partial": 0,
+      "removed": 0,
+      "absent": 0
+     },
+     "service": {
+      "intact": 199,
+      "partial": 0,
+      "removed": 1,
+      "absent": 0
+     },
+     "appointment": {
+      "intact": 80,
+      "partial": 0,
+      "removed": 0,
+      "absent": 120
+     },
+     "interval": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     },
+     "billing_cue": {
+      "intact": 40,
+      "partial": 0,
+      "removed": 0,
+      "absent": 160
+     },
+     "amount": {
+      "intact": 0,
+      "partial": 0,
+      "removed": 0,
+      "absent": 200
+     }
+    },
+    "contact_any_intact": 200,
+    "kits_intact": {
+     "deliverable": 156,
+     "core_strict": 60,
+     "core_broad": 156
+    },
+    "credibility_elements_all_intact": 199,
+    "identifier_elements_intact_hist": {
+     "1/3": 4,
+     "1/4": 6,
+     "2/3": 34,
+     "2/4": 20,
+     "2/6": 2,
+     "3/3": 2,
+     "3/4": 42,
+     "3/5": 17,
+     "3/6": 4,
+     "4/4": 12,
+     "4/5": 23,
+     "4/6": 12,
+     "5/6": 19,
+     "6/6": 3
+    },
+    "labels_on_elements": {
+     "name": {
+      "PERSON": 37,
+      "LOCATION": 6,
+      "NRP": 2
+     },
+     "dob": {
+      "DATE_TIME": 175
+     },
+     "address": {
+      "LOCATION": 29,
+      "PERSON": 6
+     },
+     "email": {
+      "PERSON": 8,
+      "LOCATION": 5,
+      "NRP": 2
+     },
+     "service": {
+      "PERSON": 1
+     }
+    },
+    "consistency_checks_passed": 1137,
+    "per_scenario": {
+     "billing": {
+      "deliverable": 34,
+      "core_strict": 0,
+      "core_broad": 34,
+      "records": 40
+     },
+     "booking": {
+      "deliverable": 24,
+      "core_strict": 24,
+      "core_broad": 24,
+      "records": 40
+     },
+     "refill": {
+      "deliverable": 35,
+      "core_strict": 0,
+      "core_broad": 35,
+      "records": 40
+     },
+     "reschedule": {
+      "deliverable": 36,
+      "core_strict": 36,
+      "core_broad": 36,
+      "records": 40
+     },
+     "results": {
+      "deliverable": 27,
+      "core_strict": 0,
+      "core_broad": 27,
+      "records": 40
+     }
+    }
+   }
+  }
+ },
+ "texture": {
+  "presidio_default": [
+   {
+    "id": "PT-00049",
+    "group": "clinic",
+    "redacted_text": "Patient <PERSON> (DOB <DATE_TIME>, Medicare <PHONE_NUMBER>) reported pain on biting, suspected cracked cusp. Contact <PHONE_NUMBER> or <EMAIL_ADDRESS|URL>. Address on file: 157 High St, Norwood SA 5067. Declined treatment on cost grounds; note for follow-up call.",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "removed",
+     "address": "intact",
+     "dob": "removed",
+     "medicare": "removed",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "EMAIL_ADDRESS",
+      1.0,
+      "marguerite.kaur@outlook.com"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Marguerite Kaur"
+     ],
+     [
+      "DATE_TIME",
+      0.6,
+      "21/02/1951"
+     ],
+     [
+      "URL",
+      0.5,
+      "outlook.com"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "4655 04518 5"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "0421 550 284"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-000",
+    "group": "voice_formatted",
+    "redacted_text": "Agent: Thanks for calling Northside Family Medical. This is the virtual receptionist. How can I help you <DATE_TIME>?\nCaller: Hi, I'd like to book an appointment. My name is <PERSON>.\nAgent: Thanks <PERSON>. Can I get your date of birth?\nCaller: It's <DATE_TIME>.\nAgent: And the best number to reach you on?\nCaller: <PHONE_NUMBER>.\nAgent: What's the appointment for?\nCaller: I've got high cholesterol and it's been getting worse. I'm on simvastatin but I think the dose needs looking at. Also I'm allergic to penicillin, so please note that.\nAgent: Noted. Is there a doctor you prefer?\nCaller: Dr <PERSON>, I saw him last time. My daughter <PERSON> will bring me, she has the car.\nAgent: I have <DATE_TIME> 3:15 available. Shall I book that?\nCaller: Yes please. Can you send the confirmation to <URL|EMAIL_ADDRESS>?\nAgent: Done. You'll get a confirmation shortly. Anything else?\nCaller: No, that's all, thank you.",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "removed",
+     "address": "absent",
+     "dob": "removed",
+     "medicare": "absent",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "partial",
+     "interval": "absent",
+     "billing_cue": "absent",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "EMAIL_ADDRESS",
+      1.0,
+      "kirk.reinger34@bigpond.com"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "today"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Kirk Reinger"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Kirk"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "26 November 1947"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Lucio Robel"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Jeane"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "Monday"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "0454 955 980"
+     ],
+     [
+      "URL",
+      0.5,
+      "kirk.re"
+     ],
+     [
+      "URL",
+      0.5,
+      "bigpond.com"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-004",
+    "group": "voice_formatted",
+    "redacted_text": "Agent: Thanks for calling Northside Family Medical. This is the virtual receptionist. How can I help you <DATE_TIME>?\nCaller: I got a bill I don't understand. <PERSON>, <DATE_TIME>.\nAgent: I'll look that up. Can you confirm your Medicare number?\nCaller: <DATE_TIME|PHONE_NUMBER>. And the address on the bill is wrong, it should be 48 Given Tce, <LOCATION> NSW <DATE_TIME>.\nAgent: Updated. What was the bill for?\nCaller: The visit about my high blood pressure. I'm on atenolol now. Send the corrected bill to <EMAIL_ADDRESS|URL>, and ring me on <DATE_TIME|PHONE_NUMBER> if there's a problem.\nAgent: Will do. Anything else?\nCaller: No thanks.",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "removed",
+     "address": "partial",
+     "dob": "removed",
+     "medicare": "removed",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "EMAIL_ADDRESS",
+      1.0,
+      "noella.hermiston52@hotmail.com"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "today"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Noella Hermiston"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "31 January 1995"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "6542 64290 2"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "Newtown"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "2042"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "0463 159 854"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "6542 64290 2"
+     ],
+     [
+      "URL",
+      0.5,
+      "hotmail.com"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "0463 159 854"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-000",
+    "group": "voice_digits",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you <DATE_TIME>\ncaller hi id like to book an appointment my name is <PERSON>\nagent thanks <PERSON> can i get your date of birth\ncaller its <DATE_TIME>\nagent and the best number to reach you on\ncaller <DATE_TIME|PHONE_NUMBER>\nagent whats the appointment for\ncaller ive got high cholesterol and its been getting worse im on simvastatin but i think the dose needs looking at also im allergic to penicillin so please note that\nagent noted is there a doctor you prefer\ncaller <PERSON> robel i saw him last time my daughter <PERSON> will bring me she has the car\nagent i have <DATE_TIME> available shall i book that\ncaller yes please can you send the confirmation to <PERSON> at bigpond dot com\nagent done youll get a confirmation shortly anything else\ncaller no thats all thank you",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "partial",
+     "address": "absent",
+     "dob": "removed",
+     "medicare": "absent",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "removed",
+     "interval": "absent",
+     "billing_cue": "absent",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "DATE_TIME",
+      0.85,
+      "today"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "kirk reinger"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "kirk"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "26 11 1947"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "0454955980"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "dr lucio"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "jeane"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "monday 315"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "kirk dot reinger34"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "0454955980"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-004",
+    "group": "voice_digits",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you <DATE_TIME>\ncaller i got a bill i dont understand noella <LOCATION> <DATE_TIME>\nagent ill look that up can you confirm your medicare number\ncaller <DATE_TIME|PHONE_NUMBER> and the address on the bill is wrong it should be 48 given tce newtown nsw 2042\nagent updated what was the bill for\ncaller the visit about my high blood pressure im on atenolol now send the corrected bill to noella dot hermiston52 at hotmail dot com and ring me on <DATE_TIME|PHONE_NUMBER> if theres a problem\nagent will do anything else\ncaller no thanks",
+    "states": {
+     "name": "partial",
+     "phone": "removed",
+     "email": "intact",
+     "address": "intact",
+     "dob": "removed",
+     "medicare": "removed",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "DATE_TIME",
+      0.85,
+      "today"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "hermiston"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "31 1 1995"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "6542642902"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "0463159854"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "6542642902"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "0463159854"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-000",
+    "group": "voice_spoken",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you <DATE_TIME>\ncaller hi id like to book an appointment my name is <PERSON>\nagent thanks <PERSON> can i get your date of birth\ncaller its <DATE_TIME>\nagent and the best number to reach you on\ncaller oh four five four nine five five nine eight oh\nagent whats the appointment for\ncaller ive got high cholesterol and its been getting worse im on simvastatin but i think the dose needs looking at also im allergic to penicillin so please note that\nagent noted is there a doctor you prefer\ncaller <PERSON> robel i saw him last time my daughter <PERSON> will bring me she has the car\nagent i have <DATE_TIME> available shall i book that\ncaller yes please can you send the confirmation to <PERSON> three four at bigpond dot com\nagent done youll get a confirmation shortly anything else\ncaller no thats all thank you",
+    "states": {
+     "name": "removed",
+     "phone": "intact",
+     "email": "partial",
+     "address": "absent",
+     "dob": "removed",
+     "medicare": "absent",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "removed",
+     "interval": "absent",
+     "billing_cue": "absent",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "DATE_TIME",
+      0.85,
+      "today"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "kirk reinger"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "kirk"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "the twenty sixth of november nineteen forty seven"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "dr lucio"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "jeane"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "monday 315"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "kirk dot reinger"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-004",
+    "group": "voice_spoken",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you <DATE_TIME>\ncaller i got a bill i dont understand noella <LOCATION> <DATE_TIME>\nagent ill look that up can you confirm your medicare number\ncaller six five four two six four two nine zero two and the address on the bill is wrong it should be <DATE_TIME> given tce newtown nsw two oh four two\nagent updated what was the bill for\ncaller the visit about my high blood pressure im on atenolol now send the corrected bill to noella dot <LOCATION> <DATE_TIME> at hotmail dot com and ring me on oh four six three one five nine eight five four if theres a problem\nagent will do anything else\ncaller no thanks",
+    "states": {
+     "name": "partial",
+     "phone": "intact",
+     "email": "partial",
+     "address": "partial",
+     "dob": "removed",
+     "medicare": "intact",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "DATE_TIME",
+      0.85,
+      "today"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "hermiston"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "the thirty first of january nineteen ninety five"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "four eight"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "hermiston"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "five two"
+     ]
+    ]
+   }
+  ],
+  "presidio_au_on": [
+   {
+    "id": "PT-00049",
+    "group": "clinic",
+    "redacted_text": "Patient <PERSON> (DOB <DATE_TIME>, Medicare <AU_MEDICARE|PHONE_NUMBER>) reported pain on biting, suspected cracked cusp. Contact <PHONE_NUMBER> or <EMAIL_ADDRESS|URL>. Address on file: 157 High St, Norwood SA 5067. Declined treatment on cost grounds; note for follow-up call.",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "removed",
+     "address": "intact",
+     "dob": "removed",
+     "medicare": "removed",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "AU_MEDICARE",
+      1.0,
+      "4655 04518 5"
+     ],
+     [
+      "EMAIL_ADDRESS",
+      1.0,
+      "marguerite.kaur@outlook.com"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Marguerite Kaur"
+     ],
+     [
+      "DATE_TIME",
+      0.6,
+      "21/02/1951"
+     ],
+     [
+      "URL",
+      0.5,
+      "outlook.com"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "4655 04518 5"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "0421 550 284"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-000",
+    "group": "voice_formatted",
+    "redacted_text": "Agent: Thanks for calling Northside Family Medical. This is the virtual receptionist. How can I help you <DATE_TIME>?\nCaller: Hi, I'd like to book an appointment. My name is <PERSON>.\nAgent: Thanks <PERSON>. Can I get your date of birth?\nCaller: It's <DATE_TIME>.\nAgent: And the best number to reach you on?\nCaller: <PHONE_NUMBER>.\nAgent: What's the appointment for?\nCaller: I've got high cholesterol and it's been getting worse. I'm on simvastatin but I think the dose needs looking at. Also I'm allergic to penicillin, so please note that.\nAgent: Noted. Is there a doctor you prefer?\nCaller: Dr <PERSON>, I saw him last time. My daughter <PERSON> will bring me, she has the car.\nAgent: I have <DATE_TIME> 3:15 available. Shall I book that?\nCaller: Yes please. Can you send the confirmation to <URL|EMAIL_ADDRESS>?\nAgent: Done. You'll get a confirmation shortly. Anything else?\nCaller: No, that's all, thank you.",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "removed",
+     "address": "absent",
+     "dob": "removed",
+     "medicare": "absent",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "partial",
+     "interval": "absent",
+     "billing_cue": "absent",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "EMAIL_ADDRESS",
+      1.0,
+      "kirk.reinger34@bigpond.com"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "today"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Kirk Reinger"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Kirk"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "26 November 1947"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Lucio Robel"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Jeane"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "Monday"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "0454 955 980"
+     ],
+     [
+      "URL",
+      0.5,
+      "kirk.re"
+     ],
+     [
+      "URL",
+      0.5,
+      "bigpond.com"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-004",
+    "group": "voice_formatted",
+    "redacted_text": "Agent: Thanks for calling Northside Family Medical. This is the virtual receptionist. How can I help you <DATE_TIME>?\nCaller: I got a bill I don't understand. <PERSON>, <DATE_TIME>.\nAgent: I'll look that up. Can you confirm your Medicare number?\nCaller: <AU_MEDICARE|DATE_TIME|PHONE_NUMBER>. And the address on the bill is wrong, it should be 48 Given Tce, <LOCATION> NSW <DATE_TIME>.\nAgent: Updated. What was the bill for?\nCaller: The visit about my high blood pressure. I'm on atenolol now. Send the corrected bill to <EMAIL_ADDRESS|URL>, and ring me on <DATE_TIME|PHONE_NUMBER> if there's a problem.\nAgent: Will do. Anything else?\nCaller: No thanks.",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "removed",
+     "address": "partial",
+     "dob": "removed",
+     "medicare": "removed",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "AU_MEDICARE",
+      1.0,
+      "6542 64290 2"
+     ],
+     [
+      "EMAIL_ADDRESS",
+      1.0,
+      "noella.hermiston52@hotmail.com"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "today"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Noella Hermiston"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "31 January 1995"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "6542 64290 2"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "Newtown"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "2042"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "0463 159 854"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "6542 64290 2"
+     ],
+     [
+      "URL",
+      0.5,
+      "hotmail.com"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "0463 159 854"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-000",
+    "group": "voice_digits",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you <DATE_TIME>\ncaller hi id like to book an appointment my name is <PERSON>\nagent thanks <PERSON> can i get your date of birth\ncaller its <DATE_TIME>\nagent and the best number to reach you on\ncaller <DATE_TIME|PHONE_NUMBER>\nagent whats the appointment for\ncaller ive got high cholesterol and its been getting worse im on simvastatin but i think the dose needs looking at also im allergic to penicillin so please note that\nagent noted is there a doctor you prefer\ncaller <PERSON> robel i saw him last time my daughter <PERSON> will bring me she has the car\nagent i have <DATE_TIME> available shall i book that\ncaller yes please can you send the confirmation to <PERSON> at bigpond dot com\nagent done youll get a confirmation shortly anything else\ncaller no thats all thank you",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "partial",
+     "address": "absent",
+     "dob": "removed",
+     "medicare": "absent",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "removed",
+     "interval": "absent",
+     "billing_cue": "absent",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "DATE_TIME",
+      0.85,
+      "today"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "kirk reinger"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "kirk"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "26 11 1947"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "0454955980"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "dr lucio"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "jeane"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "monday 315"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "kirk dot reinger34"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "0454955980"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-004",
+    "group": "voice_digits",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you <DATE_TIME>\ncaller i got a bill i dont understand noella <LOCATION> <DATE_TIME>\nagent ill look that up can you confirm your medicare number\ncaller <AU_MEDICARE|DATE_TIME|PHONE_NUMBER> and the address on the bill is wrong it should be 48 given tce newtown nsw 2042\nagent updated what was the bill for\ncaller the visit about my high blood pressure im on atenolol now send the corrected bill to noella dot hermiston52 at hotmail dot com and ring me on <DATE_TIME|PHONE_NUMBER> if theres a problem\nagent will do anything else\ncaller no thanks",
+    "states": {
+     "name": "partial",
+     "phone": "removed",
+     "email": "intact",
+     "address": "intact",
+     "dob": "removed",
+     "medicare": "removed",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "AU_MEDICARE",
+      1.0,
+      "6542642902"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "today"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "hermiston"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "31 1 1995"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "6542642902"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "0463159854"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "6542642902"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "0463159854"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-000",
+    "group": "voice_spoken",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you <DATE_TIME>\ncaller hi id like to book an appointment my name is <PERSON>\nagent thanks <PERSON> can i get your date of birth\ncaller its <DATE_TIME>\nagent and the best number to reach you on\ncaller oh four five four nine five five nine eight oh\nagent whats the appointment for\ncaller ive got high cholesterol and its been getting worse im on simvastatin but i think the dose needs looking at also im allergic to penicillin so please note that\nagent noted is there a doctor you prefer\ncaller <PERSON> robel i saw him last time my daughter <PERSON> will bring me she has the car\nagent i have <DATE_TIME> available shall i book that\ncaller yes please can you send the confirmation to <PERSON> three four at bigpond dot com\nagent done youll get a confirmation shortly anything else\ncaller no thats all thank you",
+    "states": {
+     "name": "removed",
+     "phone": "intact",
+     "email": "partial",
+     "address": "absent",
+     "dob": "removed",
+     "medicare": "absent",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "removed",
+     "interval": "absent",
+     "billing_cue": "absent",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "DATE_TIME",
+      0.85,
+      "today"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "kirk reinger"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "kirk"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "the twenty sixth of november nineteen forty seven"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "dr lucio"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "jeane"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "monday 315"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "kirk dot reinger"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-004",
+    "group": "voice_spoken",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you <DATE_TIME>\ncaller i got a bill i dont understand noella <LOCATION> <DATE_TIME>\nagent ill look that up can you confirm your medicare number\ncaller six five four two six four two nine zero two and the address on the bill is wrong it should be <DATE_TIME> given tce newtown nsw two oh four two\nagent updated what was the bill for\ncaller the visit about my high blood pressure im on atenolol now send the corrected bill to noella dot <LOCATION> <DATE_TIME> at hotmail dot com and ring me on oh four six three one five nine eight five four if theres a problem\nagent will do anything else\ncaller no thanks",
+    "states": {
+     "name": "partial",
+     "phone": "intact",
+     "email": "partial",
+     "address": "partial",
+     "dob": "removed",
+     "medicare": "intact",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "DATE_TIME",
+      0.85,
+      "today"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "hermiston"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "the thirty first of january nineteen ninety five"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "four eight"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "hermiston"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "five two"
+     ]
+    ]
+   }
+  ],
+  "rlg_default": [
+   {
+    "id": "PT-00049",
+    "group": "clinic",
+    "redacted_text": "Patient <PERSON> (DOB <DATE_TIME>, Medicare <PHONE_NUMBER>) reported pain on biting, suspected cracked cusp. Contact <PHONE_NUMBER> or <EMAIL_ADDRESS>. Address on file: 157 High St, Norwood SA 5067. Declined treatment on cost grounds; note for follow-up call.",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "removed",
+     "address": "intact",
+     "dob": "removed",
+     "medicare": "removed",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "PERSON",
+      0.85,
+      "Marguerite Kaur"
+     ],
+     [
+      "DATE_TIME",
+      0.6,
+      "21/02/1951"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "4655 04518 5"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "0421 550 284"
+     ],
+     [
+      "EMAIL_ADDRESS",
+      1.0,
+      "marguerite.kaur@outlook.com"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-000",
+    "group": "voice_formatted",
+    "redacted_text": "Agent: Thanks for calling Northside Family Medical. This is the virtual receptionist. How can I help you today?\n<PERSON>: Hi, I'd like to book an appointment. My name is <PERSON>.\nAgent: Thanks <PERSON>. Can I get your date of birth?\n<PERSON>: It's <DATE_TIME>.\nAgent: And the best number to reach you on?\nCaller: <PHONE_NUMBER>.\nAgent: What's the appointment for?\n<PERSON>: I've got high cholesterol and it's been getting worse. I'm on simvastatin but I think the dose needs looking at. Also I'm allergic to penicillin, so please note that.\nAgent: Noted. Is there a doctor you prefer?\n<PERSON>: Dr <PERSON>, I saw him last time. My daughter <PERSON> will bring me, she has the car.\nAgent: I have Monday 3:15 available. Shall I book that?\n<PERSON>: Yes please. Can you send the confirmation to <EMAIL_ADDRESS>?\nAgent: Done. You'll get a confirmation shortly. Anything else?\n<PERSON>: No, that's all, thank you.",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "removed",
+     "address": "absent",
+     "dob": "removed",
+     "medicare": "absent",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "intact",
+     "interval": "absent",
+     "billing_cue": "absent",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Kirk Reinger"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Kirk"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "26 November 1947"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "0454 955 980"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Lucio Robel"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Jeane"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "EMAIL_ADDRESS",
+      1.0,
+      "kirk.reinger34@bigpond.com"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-004",
+    "group": "voice_formatted",
+    "redacted_text": "Agent: Thanks for calling Northside Family Medical. This is the virtual receptionist. How can I help you today?\n<PERSON>: I got a bill I don't understand. <PERSON>, <DATE_TIME>.\nAgent: I'll look that up. Can you confirm your Medicare number?\nCaller: <PHONE_NUMBER>. And the address on the bill is wrong, it should be 48 Given Tce, Newtown NSW 2042.\nAgent: Updated. What was the bill for?\n<PERSON>: The visit about my high blood pressure. I'm on atenolol now. Send the corrected bill to <EMAIL_ADDRESS>, and ring me on <PHONE_NUMBER> if there's a problem.\nAgent: Will do. Anything else?\n<PERSON>: No thanks.",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "removed",
+     "address": "intact",
+     "dob": "removed",
+     "medicare": "removed",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Noella Hermiston"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "31 January 1995"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "6542 64290 2"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "EMAIL_ADDRESS",
+      1.0,
+      "noella.hermiston52@hotmail.com"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "0463 159 854"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-000",
+    "group": "voice_digits",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you today\ncaller hi id like to book an appointment my name is <PERSON>agent thanks kirk can i get your date of birth\ncaller its 26 11 1947\nagent and the best number to reach you on\ncaller <PHONE_NUMBER>\nagent whats the appointment for\ncaller ive got high cholesterol and its been getting worse im on simvastatin but i think the dose needs looking at also im allergic to <LOCATION> so please note that\nagent noted is there a doctor you prefer\ncaller <PERSON> robel i saw him last time my daughter jeane will bring me she has the car\nagent i have monday 315 available shall i book that\ncaller yes please can you send the confirmation to kirk dot <PERSON> at bigpond dot com\nagent done youll get a confirmation shortly anything else\ncaller no thats all thank you",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "partial",
+     "address": "absent",
+     "dob": "intact",
+     "medicare": "absent",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "intact",
+     "interval": "absent",
+     "billing_cue": "absent",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "PERSON",
+      0.85,
+      "kirk reinger\n"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "0454955980"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "penicillin"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "dr lucio"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "reinger34"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-004",
+    "group": "voice_digits",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you today\ncaller i got a bill i dont understand noella hermiston 31 1 1995\nagent ill look that up can you confirm your medicare number\ncaller <PHONE_NUMBER> and the address on the bill is wrong it should be 48 given tce newtown nsw 2042\nagent updated what was the bill for\ncaller the visit about my high blood pressure im on atenolol now send the corrected bill to noella dot <PERSON> at hotmail dot com and ring me on <PHONE_NUMBER> if theres a problem\nagent will do anything else\ncaller no thanks",
+    "states": {
+     "name": "intact",
+     "phone": "removed",
+     "email": "partial",
+     "address": "intact",
+     "dob": "intact",
+     "medicare": "removed",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": true,
+     "core_strict": false,
+     "core_broad": true
+    },
+    "findings_actionable": [
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "6542642902"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "hermiston52"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "0463159854"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-000",
+    "group": "voice_spoken",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you today\ncaller hi id like to book an appointment my name is <PERSON>agent thanks kirk can i get your date of birth\ncaller its the twenty sixth of <DATE_TIME> seven\nagent and the best number to reach you on\ncaller oh four five four nine five five nine eight oh\nagent whats the appointment for\ncaller ive got high cholesterol and its been getting worse im on simvastatin but i think the dose needs looking at also im allergic to <LOCATION> so please note that\nagent noted is there a doctor you prefer\ncaller <PERSON> robel i saw him last time my daughter jeane will bring me she has the car\nagent i have monday 315 available shall i book that\ncaller yes please can you send the confirmation to kirk dot reinger three four at bigpond dot com\nagent done youll get a confirmation shortly anything else\ncaller no thats all thank you",
+    "states": {
+     "name": "removed",
+     "phone": "intact",
+     "email": "intact",
+     "address": "absent",
+     "dob": "partial",
+     "medicare": "absent",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "intact",
+     "interval": "absent",
+     "billing_cue": "absent",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "PERSON",
+      0.85,
+      "kirk reinger\n"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "november nineteen forty"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "penicillin"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "dr lucio"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-004",
+    "group": "voice_spoken",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you today\ncaller i got a bill i dont understand <PERSON> the thirty first of <DATE_TIME>\nagent ill look that up can you confirm your medicare number\ncaller six five four two six four two nine zero two and the address on the bill is wrong it should be four eight given tce newtown nsw two oh four two\nagent updated what was the bill for\ncaller the visit about my high blood pressure im on atenolol now send the corrected bill to noella dot <LOCATION> five two at hotmail dot com and ring me on oh four six three one five nine eight five four if theres a problem\nagent will do anything else\ncaller no thanks",
+    "states": {
+     "name": "removed",
+     "phone": "intact",
+     "email": "partial",
+     "address": "intact",
+     "dob": "partial",
+     "medicare": "intact",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "PERSON",
+      0.85,
+      "noella hermiston"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "january nineteen ninety five"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "hermiston"
+     ]
+    ]
+   }
+  ],
+  "rlg_au": [
+   {
+    "id": "PT-00049",
+    "group": "clinic",
+    "redacted_text": "Patient <PERSON> (DOB <DATE_TIME>, Medicare <PHONE_NUMBER>) reported pain on biting, suspected cracked cusp. Contact <AU_PHONE> or <EMAIL_ADDRESS>. Address on file: 157 High St, Norwood SA 5067. Declined treatment on cost grounds; note for follow-up call.",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "removed",
+     "address": "intact",
+     "dob": "removed",
+     "medicare": "removed",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "PERSON",
+      0.85,
+      "Marguerite Kaur"
+     ],
+     [
+      "DATE_TIME",
+      0.6,
+      "21/02/1951"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.4,
+      "4655 04518 5"
+     ],
+     [
+      "AU_PHONE",
+      1.0,
+      "0421 550 284"
+     ],
+     [
+      "EMAIL_ADDRESS",
+      1.0,
+      "marguerite.kaur@outlook.com"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-000",
+    "group": "voice_formatted",
+    "redacted_text": "Agent: Thanks for calling Northside Family Medical. This is the virtual receptionist. How can I help you today?\n<PERSON>: Hi, I'd like to book an appointment. My name is <PERSON>.\nAgent: Thanks <PERSON>. Can I get your date of birth?\n<PERSON>: It's <DATE_TIME>.\nAgent: And the best number to reach you on?\nCaller: <AU_PHONE>.\nAgent: What's the appointment for?\n<PERSON>: I've got high cholesterol and it's been getting worse. I'm on simvastatin but I think the dose needs looking at. Also I'm allergic to penicillin, so please note that.\nAgent: Noted. Is there a doctor you prefer?\n<PERSON>: Dr <PERSON>, I saw him last time. My daughter <PERSON> will bring me, she has the car.\nAgent: I have Monday 3:15 available. Shall I book that?\n<PERSON>: Yes please. Can you send the confirmation to <EMAIL_ADDRESS>?\nAgent: Done. You'll get a confirmation shortly. Anything else?\n<PERSON>: No, that's all, thank you.",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "removed",
+     "address": "absent",
+     "dob": "removed",
+     "medicare": "absent",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "intact",
+     "interval": "absent",
+     "billing_cue": "absent",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Kirk Reinger"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Kirk"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "26 November 1947"
+     ],
+     [
+      "AU_PHONE",
+      1.0,
+      "0454 955 980"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Lucio Robel"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Jeane"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "EMAIL_ADDRESS",
+      1.0,
+      "kirk.reinger34@bigpond.com"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-004",
+    "group": "voice_formatted",
+    "redacted_text": "Agent: Thanks for calling Northside Family Medical. This is the virtual receptionist. How can I help you today?\n<PERSON>: I got a bill I don't understand. <PERSON>, <DATE_TIME>.\nAgent: I'll look that up. Can you confirm your Medicare number?\nCaller: <PHONE_NUMBER>. And the address on the bill is wrong, it should be 48 Given Tce, Newtown NSW 2042.\nAgent: Updated. What was the bill for?\n<PERSON>: The visit about my high blood pressure. I'm on atenolol now. Send the corrected bill to <EMAIL_ADDRESS>, and ring me on <AU_PHONE> if there's a problem.\nAgent: Will do. Anything else?\n<PERSON>: No thanks.",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "removed",
+     "address": "intact",
+     "dob": "removed",
+     "medicare": "removed",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Noella Hermiston"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "31 January 1995"
+     ],
+     [
+      "PHONE_NUMBER",
+      0.75,
+      "6542 64290 2"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ],
+     [
+      "EMAIL_ADDRESS",
+      1.0,
+      "noella.hermiston52@hotmail.com"
+     ],
+     [
+      "AU_PHONE",
+      0.75,
+      "0463 159 854"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "Caller"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-000",
+    "group": "voice_digits",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you today\ncaller hi id like to book an appointment my name is <PERSON>agent thanks kirk can i get your date of birth\ncaller its 26 11 1947\nagent and the best number to reach you on\ncaller <AU_PHONE>\nagent whats the appointment for\ncaller ive got high cholesterol and its been getting worse im on simvastatin but i think the dose needs looking at also im allergic to <LOCATION> so please note that\nagent noted is there a doctor you prefer\ncaller <PERSON> robel i saw him last time my daughter jeane will bring me she has the car\nagent i have monday 315 available shall i book that\ncaller yes please can you send the confirmation to kirk dot <PERSON> at bigpond dot com\nagent done youll get a confirmation shortly anything else\ncaller no thats all thank you",
+    "states": {
+     "name": "removed",
+     "phone": "removed",
+     "email": "partial",
+     "address": "absent",
+     "dob": "intact",
+     "medicare": "absent",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "intact",
+     "interval": "absent",
+     "billing_cue": "absent",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "PERSON",
+      0.85,
+      "kirk reinger\n"
+     ],
+     [
+      "AU_PHONE",
+      1.0,
+      "0454955980"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "penicillin"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "dr lucio"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "reinger34"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-004",
+    "group": "voice_digits",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you today\ncaller i got a bill i dont understand noella hermiston 31 1 1995\nagent ill look that up can you confirm your medicare number\ncaller <AU_MEDICARE> and the address on the bill is wrong it should be 48 given tce newtown nsw 2042\nagent updated what was the bill for\ncaller the visit about my high blood pressure im on atenolol now send the corrected bill to noella dot <PERSON> at hotmail dot com and ring me on <AU_PHONE> if theres a problem\nagent will do anything else\ncaller no thanks",
+    "states": {
+     "name": "intact",
+     "phone": "removed",
+     "email": "partial",
+     "address": "intact",
+     "dob": "intact",
+     "medicare": "removed",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": true,
+     "core_strict": false,
+     "core_broad": true
+    },
+    "findings_actionable": [
+     [
+      "AU_MEDICARE",
+      1.0,
+      "6542642902"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "hermiston52"
+     ],
+     [
+      "AU_PHONE",
+      0.75,
+      "0463159854"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-000",
+    "group": "voice_spoken",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you today\ncaller hi id like to book an appointment my name is <PERSON>agent thanks kirk can i get your date of birth\ncaller its the twenty sixth of <DATE_TIME> seven\nagent and the best number to reach you on\ncaller oh four five four nine five five nine eight oh\nagent whats the appointment for\ncaller ive got high cholesterol and its been getting worse im on simvastatin but i think the dose needs looking at also im allergic to <LOCATION> so please note that\nagent noted is there a doctor you prefer\ncaller <PERSON> robel i saw him last time my daughter jeane will bring me she has the car\nagent i have monday 315 available shall i book that\ncaller yes please can you send the confirmation to kirk dot reinger three four at bigpond dot com\nagent done youll get a confirmation shortly anything else\ncaller no thats all thank you",
+    "states": {
+     "name": "removed",
+     "phone": "intact",
+     "email": "intact",
+     "address": "absent",
+     "dob": "partial",
+     "medicare": "absent",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "intact",
+     "interval": "absent",
+     "billing_cue": "absent",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "PERSON",
+      0.85,
+      "kirk reinger\n"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "november nineteen forty"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "penicillin"
+     ],
+     [
+      "PERSON",
+      0.85,
+      "dr lucio"
+     ]
+    ]
+   },
+   {
+    "id": "CALL-004",
+    "group": "voice_spoken",
+    "redacted_text": "agent thanks for calling northside family medical this is the virtual receptionist how can i help you today\ncaller i got a bill i dont understand <PERSON> the thirty first of <DATE_TIME>\nagent ill look that up can you confirm your medicare number\ncaller six five four two six four two nine zero two and the address on the bill is wrong it should be four eight given tce newtown nsw two oh four two\nagent updated what was the bill for\ncaller the visit about my high blood pressure im on atenolol now send the corrected bill to noella dot <LOCATION> five two at hotmail dot com and ring me on oh four six three one five nine eight five four if theres a problem\nagent will do anything else\ncaller no thanks",
+    "states": {
+     "name": "removed",
+     "phone": "intact",
+     "email": "partial",
+     "address": "intact",
+     "dob": "partial",
+     "medicare": "intact",
+     "ssn": "absent",
+     "insurance": "absent",
+     "provider": "intact",
+     "service": "intact",
+     "appointment": "absent",
+     "interval": "absent",
+     "billing_cue": "intact",
+     "amount": "absent"
+    },
+    "kit": {
+     "deliverable": false,
+     "core_strict": false,
+     "core_broad": false
+    },
+    "findings_actionable": [
+     [
+      "PERSON",
+      0.85,
+      "noella hermiston"
+     ],
+     [
+      "DATE_TIME",
+      0.85,
+      "january nineteen ninety five"
+     ],
+     [
+      "LOCATION",
+      0.85,
+      "hermiston"
+     ]
+    ]
+   }
+  ]
+ },
+ "headline": {
+  "clinic": {
+   "presidio_default": {
+    "records": 2000,
+    "deliverable_after_redaction": 1,
+    "core_strict_after_redaction": 0,
+    "core_broad_after_redaction": 1
+   },
+   "presidio_au_on": {
+    "records": 2000,
+    "deliverable_after_redaction": 1,
+    "core_strict_after_redaction": 0,
+    "core_broad_after_redaction": 1
+   },
+   "rlg_default": {
+    "records": 2000,
+    "deliverable_after_redaction": 80,
+    "core_strict_after_redaction": 13,
+    "core_broad_after_redaction": 80
+   },
+   "rlg_au": {
+    "records": 2000,
+    "deliverable_after_redaction": 80,
+    "core_strict_after_redaction": 13,
+    "core_broad_after_redaction": 80
+   }
+  },
+  "voice_formatted": {
+   "presidio_default": {
+    "records": 200,
+    "deliverable_after_redaction": 0,
+    "core_strict_after_redaction": 0,
+    "core_broad_after_redaction": 0
+   },
+   "presidio_au_on": {
+    "records": 200,
+    "deliverable_after_redaction": 0,
+    "core_strict_after_redaction": 0,
+    "core_broad_after_redaction": 0
+   },
+   "rlg_default": {
+    "records": 200,
+    "deliverable_after_redaction": 1,
+    "core_strict_after_redaction": 0,
+    "core_broad_after_redaction": 1
+   },
+   "rlg_au": {
+    "records": 200,
+    "deliverable_after_redaction": 1,
+    "core_strict_after_redaction": 0,
+    "core_broad_after_redaction": 1
+   }
+  },
+  "voice_digits": {
+   "presidio_default": {
+    "records": 200,
+    "deliverable_after_redaction": 24,
+    "core_strict_after_redaction": 0,
+    "core_broad_after_redaction": 24
+   },
+   "presidio_au_on": {
+    "records": 200,
+    "deliverable_after_redaction": 24,
+    "core_strict_after_redaction": 0,
+    "core_broad_after_redaction": 24
+   },
+   "rlg_default": {
+    "records": 200,
+    "deliverable_after_redaction": 82,
+    "core_strict_after_redaction": 12,
+    "core_broad_after_redaction": 82
+   },
+   "rlg_au": {
+    "records": 200,
+    "deliverable_after_redaction": 82,
+    "core_strict_after_redaction": 12,
+    "core_broad_after_redaction": 82
+   }
+  },
+  "voice_spoken": {
+   "presidio_default": {
+    "records": 200,
+    "deliverable_after_redaction": 42,
+    "core_strict_after_redaction": 0,
+    "core_broad_after_redaction": 42
+   },
+   "presidio_au_on": {
+    "records": 200,
+    "deliverable_after_redaction": 42,
+    "core_strict_after_redaction": 0,
+    "core_broad_after_redaction": 42
+   },
+   "rlg_default": {
+    "records": 200,
+    "deliverable_after_redaction": 156,
+    "core_strict_after_redaction": 60,
+    "core_broad_after_redaction": 156
+   },
+   "rlg_au": {
+    "records": 200,
+    "deliverable_after_redaction": 156,
+    "core_strict_after_redaction": 60,
+    "core_broad_after_redaction": 156
+   }
+  }
+ }
+}
